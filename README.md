@@ -1,12 +1,14 @@
 # Flutter ARM Linux Font Fixer
 
-**针对 ARM 架构下 Ubuntu (Snap) 应用中文显示为方框（豆腐块）的系统级修复工具。**
+**针对在 Ubuntu（Snap 包）上运行且由 Flutter 引擎构建的应用在 ARM 架构上出现中文显示为方框（豆腐块）的问题的系统级修复工具。**
+
+> 说明：本脚本的**主要适用场景**为在 Ubuntu ARM 系统上以 Snap 方式分发、并由 Flutter 引擎构建的应用；并非针对所有 Flutter 应用或所有发行版通用，但其中的实现方法可为类似问题提供借鉴。 / Note: This tool is primarily targeted at Flutter-built apps packaged as Snap on Ubuntu ARM systems; it is not a universal fix for all Flutter apps or distributions, but may offer guidance for similar issues.
 
 
 
 ### 📝 背景与原理
 
-在 ARM 架构（如树莓派、飞腾、RK3588 或 Parallels 虚拟机）运行 Ubuntu 时，许多通过 Snap 分发的 Flutter 应用（如 `desktop-security-center`）会出现中文乱码。
+在 ARM 架构（如树莓派、飞腾、RK3588 或 Parallels 虚拟机）运行 Ubuntu 时，许多**由 Flutter 引擎构建并通过 Snap 分发**的应用（如 `desktop-security-center`）会出现中文乱码。
 
 **根本原因：**
 1. **沙盒隔离**：Snap 包内的 `libfontconfig` 无法正确读取宿主系统的 `/etc/fonts` 配置。
@@ -20,7 +22,15 @@
 * 🔄 **开机自启**：自动集成 Systemd 系统级服务，重启后后台静默恢复映射。
 * 🛠️ **智能管理**：支持自动安装字体依赖、持久化配置管理、一键全量卸载。
 
+### 适用范围 / Scope
+
+* 主要目标：**在 Ubuntu ARM 平台上运行、由 Flutter 引擎构建并以 Snap 分发的应用**。
+* 非主要目标：非 Snap 分发、非 Ubuntu 平台或非 Flutter 引擎构建的应用可能不受支持。
+* 参考价值：即便不在适用范围内，该脚本中的排查与修复思路（例如通过 bind-mount 替换字体、systemd 启动时恢复映射）可供移植和参考。 / Note: While this tool focuses on Ubuntu ARM + Snap Flutter apps, its methods may help diagnose or mitigate similar problems elsewhere.
+
 ### 🚀 快速开始
+
+> 说明：本示例假设你在 Ubuntu ARM 系统上，问题应用为通过 Snap 分发并由 Flutter 引擎构建的程序。 / Note: The examples below assume an Ubuntu ARM environment and a Flutter-built app distributed as a Snap package.
 
 ### 1. 安装脚本
 下载脚本并赋予执行权限：
