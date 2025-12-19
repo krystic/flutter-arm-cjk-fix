@@ -1,8 +1,12 @@
 # Ubuntu ARM Flutter Font Fixer
 
+[![缩略图](images/screenshot-thumb.png)](images/screenshot-full.png)
+
 **针对在 Ubuntu（Snap 包）上运行且由 Flutter 引擎构建的应用在 ARM 架构上出现中文显示为方框（豆腐块）的问题的系统级修复工具。**
 
-> 说明：本脚本的**主要适用场景**为在 Ubuntu ARM 系统上以 Snap 方式分发、并由 Flutter 引擎构建的应用；并非针对所有 Flutter 应用或所有发行版通用，但其中的实现方法可为类似问题提供借鉴。 / Note: This tool is primarily targeted at Flutter-built apps packaged as Snap on Ubuntu ARM systems; it is not a universal fix for all Flutter apps or distributions, but may offer guidance for similar issues.
+> 说明：本脚本的**主要适用场景**为在 Ubuntu ARM 系统上以 Snap 方式分发、并由 Flutter 引擎构建的应用；并非针对所有 Flutter 应用或所有发行版通用，但其中的实现方法可为类似问题提供借鉴。 
+>
+>Note: This tool is primarily targeted at Flutter-built apps packaged as Snap on Ubuntu ARM systems; it is not a universal fix for all Flutter apps or distributions, but may offer guidance for similar issues.
 
 
 
