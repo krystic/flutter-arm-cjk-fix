@@ -31,12 +31,18 @@ sudo chmod +x /usr/local/bin/flutter-font-fix.sh
 
 ### 2. 命令参考
 
-| 命令 | 描述 |
+| 命令 | 描述 / Description |
 | :--- | :--- |
-| `sudo flutter-font-fix.sh -a <app_name>` | **修复并开启自启**：注入字体并将应用加入自启列表 |
-| `sudo flutter-font-fix.sh -u -a <app_name>` | **取消修复**：解除该应用的映射并从列表中移除 |
-| `sudo flutter-font-fix.sh --unmount-all` | **全量释放**：临时释放所有挂载点（保留配置记录） |
-| `sudo flutter-font-fix.sh --remove-service` | **彻底卸载**：清理所有映射、删除配置并注销自启服务 |
+| `sudo flutter-font-fix.sh -a <app_name>` | **修复并开启自启**：注入字体并将应用加入自启列表 / Repair an app and enable persistence (add to startup list) |
+| `sudo flutter-font-fix.sh -u -a <app_name>` | **取消修复**：解除该应用的映射并从列表中移除 / Unrepair an app and remove from startup list |
+| `sudo flutter-font-fix.sh --unmount-all` | **全量释放**：临时释放所有挂载点（保留配置记录） / Unmount all mappings (keeps config) |
+| `sudo flutter-font-fix.sh --remove-service` | **彻底卸载**：清理所有映射、删除配置并注销自启服务 / Remove manager, clear mappings and disable service |
+| `sudo flutter-font-fix.sh -i` or `sudo flutter-font-fix.sh --init` | **安装 Shell 补全**：为 `-a/--app` 启用 Tab 补全（snap 已安装的应用名）/ Install shell completion (Tab completion for `-a/--app`, completes `snap list` apps) |
+
+#### 补充说明 / Notes
+- 补全安装会在 `/etc/bash_completion.d/flutter-font-fix` 生成补全脚本；若以 `sudo` 运行，会提示是否将 `source /etc/bash_completion.d/flutter-font-fix` 追加到原始调用者的 `~/.bashrc`（交互式时询问并做幂等追加）。
+- 补全在非交互环境下不会提示，只会输出如何手动安装的指令。
+- 所有用户可见信息为中英双语，并带有统一前缀（如 `[INFO]`、`[OK]`、`[ERROR]`）以便脚本化处理和日志分析。
 
 ### 📂 文件结构说明
 
