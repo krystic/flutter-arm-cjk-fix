@@ -1,0 +1,50 @@
+# macOS
+#=========================
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100/
+.Trashes/
+.fseventsd/
+.DocumentRevisions-V100/
+
+# Visual Studio Code
+#=========================
+.vscode/
+*.code-workspace
+.vscode-test/
+
+# Linux / Ubuntu
+#=========================
+# temporary and user files
+*~
+.directory
+.nfs*
+
+# cache / thumbnails
+.cache/
+.thumbnailer/
+
+# Windows (common extras)
+Thumbs.db
+desktop.ini
+
+# Shell / shell history and local env
+#=========================
+# avoid committing local shell history
+.bash_history
+.zsh_history
+.history
+
+# local environment files (often sensitive)
+.env.local
+.env.*.local
+
+# Editor swap/backup files
+*.swp
+*.swo
+
+# Ignore generated thumbnails used in README (if you prefer to keep them, remove these)
+images/*-thumb.png
