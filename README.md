@@ -18,9 +18,21 @@
 在 ARM 架构（树莓派、飞腾、RK3588、Parallels 虚拟机等）运行 Ubuntu 时，许多由 Flutter 引擎构建并通过 Snap 分发的应用（如 `snap-store`、`desktop-security-center`）会出现 CJK 字符显示为方框。
 
 ### 根本原因
-1. **沙盒隔离**：Snap 包内的 `libfontconfig` 无法正确读取宿主系统的 `/etc/fonts` 配置
-2. **引擎缺陷**：Flutter Engine 在 ARM 版本中，Fontconfig 初始化失败时不会请求系统备用字体
-3. **字重问题**：Flutter 渲染不同字号会请求特定字重（Light/Bold/Medium），仅映射 Regular 字体无法完全解决
+
+经过与 Gemini 3 深入研究分析，确认问题的核心原因：
+
+1. **Flutter Engine 编译问题**：Flutter 在 ARM Linux 平台编译时，将其统一当作嵌入式系统对待，未启用 Fontconfig 支持
+   - ARM 版本的编译配置（.gn 文件）中缺少 `--enable-fontconfig` 参数
+   - AMD64 版本有专门针对桌面环境的 .gn 编译文件，包含了 Fontconfig 支持
+   - 导致 ARM 版本的 Flutter Engine 根本不会调用 `libfontconfig` 库
+
+2. **Snap 沙盒限制**：即使启用了 Fontconfig，Snap 包内的 `libfontconfig` 也无法正确读取宿主系统的 `/etc/fonts` 配置
+
+3. **字体回退机制缺失**：由于未启用 Fontconfig，Flutter Engine 在 ARM 平台上无法获取系统字体列表，导致 CJK 字符无可用字体
+
+### 解决方案来源
+
+本解决方案由 **Gemini 3** 深度研究并提供核心思路，通过 **VS Code + GitHub Copilot + Claude Sonnet 4.5** 协同编写实现。
 
 ### 解决方案
 通过 `mount --bind` 将 Noto Sans CJK 字体动态挂载到 Snap 应用内的 Ubuntu 字体路径，支持完整字重映射，并通过 Systemd 服务实现开机自动恢复。
@@ -340,7 +352,9 @@ sudo flutter-font-fix -c <app_name>
 
 ## 🙏 致谢
 
-本项目的实现思路参考了社区中关于 Snap 字体问题的讨论和解决方案。
+本项目的核心问题研究和解决方案由 **Gemini 3** 深度分析提供，代码实现使用 **VS Code + GitHub Copilot + Claude Sonnet 4.5** 协同完成。
+
+感谢社区中关于 Snap 字体问题的讨论和相关技术资料。
 
 ---
 
