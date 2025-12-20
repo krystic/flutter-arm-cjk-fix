@@ -19,7 +19,7 @@
 
 ### 根本原因
 
-经过与 Gemini 3 深入研究分析，确认问题的核心原因：
+经过与 Gemini 3 深入研究分析，推测问题的原因：
 
 1. **Flutter Engine 编译问题**：Flutter 在 ARM Linux 平台编译时，将其统一当作嵌入式系统对待，未启用 Fontconfig 支持
    - ARM 版本的编译配置（.gn 文件）中缺少 `--enable-fontconfig` 参数
@@ -30,12 +30,12 @@
 
 3. **字体回退机制缺失**：由于未启用 Fontconfig，Flutter Engine 在 ARM 平台上无法获取系统字体列表，导致 CJK 字符无可用字体
 
-### 解决方案来源
+### 解决方案
 
 本解决方案由 **Gemini 3** 深度研究并提供核心思路，通过 **VS Code + GitHub Copilot + Claude Sonnet 4.5** 协同编写实现。
-
-### 解决方案
 通过 `mount --bind` 将 Noto Sans CJK 字体动态挂载到 Snap 应用内的 Ubuntu 字体路径，支持完整字重映射，并通过 Systemd 服务实现开机自动恢复。
+
+此方案仍不完美，CJK 字体不包含的其他语言符号仍然会显示成方框或其他乱码，如需彻底解决只能找到 Flutter 准确的 BUG 原因，由 Flutter 和应用官方一起修复
 
 ---
 
