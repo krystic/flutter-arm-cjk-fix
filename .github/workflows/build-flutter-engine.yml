@@ -123,28 +123,12 @@ jobs:
         mkdir -p "$ENGINE_DIR"
         cd "$ENGINE_DIR"
         
-        # 先克隆 Flutter 主仓库
+        # 克隆 Flutter 主仓库到当前目录
         echo "克隆 flutter/flutter..."
-        git clone https://github.com/flutter/flutter.git src/flutter
+        git clone https://github.com/flutter/flutter.git .
         
-        cd src/flutter
         echo "切换到修订 $REVISION (tag: ${{ steps.set-vars.outputs.flutter_version }})..."
         git checkout $REVISION
-        cd ../..
-        
-        # 创建 .gclient 配置
-        cat > .gclient << '__EOF__'
-        solutions = [
-          {
-            "managed": False,
-            "name": "src/flutter",
-            "url": "https://github.com/flutter/flutter.git",
-            "custom_deps": {},
-            "deps_file": "DEPS",
-            "safesync_url": "",
-          },
-        ]
-        __EOF__
         
         echo "同步 DEPS 依赖..."
         # 设置 Git 配置避免警告
@@ -160,7 +144,7 @@ jobs:
     - name: Modify GN configuration for fontconfig
       run: |
         echo "修改 GN 配置以启用 fontconfig..."
-        cd "$ENGINE_DIR/src"
+        cd "$ENGINE_DIR"
         
         # 确保 GN 参数中包含 fontconfig 支持
         # 这会在后续的 gn 命令中通过 --enable-fontconfig 传递
@@ -170,9 +154,9 @@ jobs:
     - name: Generate build files with fontconfig
       run: |
         echo "生成构建配置..."
-        cd "$ENGINE_DIR/src"
+        cd "$ENGINE_DIR"
         
-        ./flutter/tools/gn \
+        ./tools/gn \
           --target-os linux \
           --linux-cpu arm64 \
           --runtime-mode release \
@@ -186,7 +170,7 @@ jobs:
     - name: Build Flutter Engine
       run: |
         echo "开始编译 Flutter Engine..."
-        cd "$ENGINE_DIR/src"
+        cd "$ENGINE_DIR"
         
         # 使用所有可用的 CPU 核心
         JOBS=$(nproc)
@@ -199,7 +183,7 @@ jobs:
     - name: Extract and verify SO file
       run: |
         VERSION="${{ steps.set-vars.outputs.flutter_version }}"
-        SO_SOURCE="$ENGINE_DIR/src/out/linux_release_arm64/libflutter_linux_gtk.so"
+        SO_SOURCE="$ENGINE_DIR/out/linux_release_arm64/libflutter_linux_gtk.so"
         SO_DEST="lib/libflutter_linux_gtk.so.$VERSION"
         
         echo "提取 SO 文件..."
@@ -313,5 +297,5 @@ jobs:
         echo "清理构建文件..."
         df -h
         # 保留缓存，只清理临时文件
-        rm -rf "$ENGINE_DIR/src/out/linux_release_arm64/obj" || true
+        rm -rf "$ENGINE_DIR/out/linux_release_arm64/obj" || true
         echo "✅ 清理完成"
