@@ -98,6 +98,21 @@ readelf -d libflutter_linux_gtk.so | grep fontconfig
 ## 🚀 快速开始
 
 ### 安装
+
+#### 方式 1：一键安装（推荐）
+```bash
+curl -fsSL https://raw.githubusercontent.com/krystic/flutter-arm-cjk-fix/main/install.sh | sudo bash
+```
+
+**功能**：
+- ✅ 自动检测 ARM64 Linux 架构（非 ARM64 会提示并退出）
+- ✅ 安装主脚本到 `/usr/local/bin/flutter-font-fix`
+- ✅ 安装必要依赖（`bash-completion`, `fonts-noto-cjk`）
+- ✅ 初始化配置目录（`/etc/flutter-cjk/`）
+- ✅ 注册并启用 systemd 服务
+- ✅ 安装 Bash 自动补全
+
+#### 方式 2：手动安装
 ```bash
 # 下载脚本
 sudo wget https://github.com/krystic/flutter-arm-cjk-fix/raw/main/flutter-font-fix \
@@ -111,6 +126,9 @@ sudo flutter-font-fix -l
 
 # 安装 Tab 补全（可选）
 sudo flutter-font-fix -i
+
+# 安装 systemd 服务（可选）
+sudo flutter-font-fix --install-service
 ```
 
 ### 基本用法
@@ -175,10 +193,10 @@ flutter-font-fix -l
 flutter-font-fix -d
 ```
 
-#### 4. 卸载映射
+#### 4. 移除映射
 ```bash
-# 卸载单个应用（官方+自定义）
-sudo flutter-font-fix -u snap-store
+# 移除单个应用（官方+自定义）
+sudo flutter-font-fix -r snap-store
 
 # 临时卸载所有（保留配置）
 sudo flutter-font-fix --unmount-all
@@ -197,7 +215,7 @@ sudo flutter-font-fix --remove-service
 |------|---------|
 | `sudo flutter-font-fix -a <app>` | 修复 Ubuntu 官方应用（优先 SO 替换，回退字体映射）<br>Repair official Ubuntu apps (SO replacement first, fallback to font mapping) |
 | `sudo flutter-font-fix -c <app>` | 自定义字体修复<br>Repair with custom fonts |
-| `sudo flutter-font-fix -u <app>` | 卸载映射（包括 SO 和字体）<br>Unmount mappings (SO and fonts) |
+| `sudo flutter-font-fix -r <app>` | 移除/卸载映射（包括 SO 和字体）<br>Remove/unmount mappings (SO and fonts) |
 | `flutter-font-fix -l \| --list` | 列出已映射应用<br>List mapped apps |
 | `flutter-font-fix -d \| --detail` | 详细映射信息<br>Detail mappings |
 | `sudo flutter-font-fix --unmount-all` | 卸载全部<br>Unmount all |

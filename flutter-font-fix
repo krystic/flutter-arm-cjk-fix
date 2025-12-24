@@ -661,13 +661,13 @@ _flutter_font_fix_completion() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     case "$prev" in
-        -a|--app|-c|--custom)
+        -a|--app|-c|--custom|-r|--remove)
             if command -v snap >/dev/null 2>&1; then
                 apps="$(snap list | awk 'NR>1{print $1}')"
                 COMPREPLY=( $(compgen -W "$apps" -- "$cur") )
             fi
             ;;
-        -u|--unmount)
+        -r|--remove)
             # 补全已映射的应用
             local config_dir="/etc/flutter-cjk"
             local config_file="$config_dir/ubuntu.conf"
@@ -1314,7 +1314,7 @@ parse_and_execute_command() {
 
     while [[ $# -gt 0 ]]; do
         case $1 in
-            -u|--unmount) COMMAND="unmount"; APP_NAME="$2"; shift 2 ;;
+            -r|--remove) COMMAND="unmount"; APP_NAME="$2"; shift 2 ;;
             -a|--app) APP_NAME="$2"; shift 2 ;;
             -l|--list) COMMAND="list"; shift ;;
             -d|--detail) COMMAND="detail"; shift ;;
@@ -1326,7 +1326,7 @@ parse_and_execute_command() {
         echo "Usage:"
         echo "  sudo $(basename "$0") -a <app_name>       Repair with Flutter Engine or fonts / 使用引擎修复或字体映射"
         echo "  sudo $(basename "$0") -c <app_name>       Repair with custom fonts / 自定义字体修复"
-        echo "  sudo $(basename "$0") -u <app_name>       Unmount mappings / 卸载映射"
+        echo "  sudo $(basename "$0") -r <app_name>       Remove/unmount mappings / 移除/卸载映射"
         echo "  $(basename "$0") -l | --list              List mapped apps / 列出已映射应用"
         echo "  $(basename "$0") -d | --detail            Detail mappings / 详细映射信息"
         echo "  sudo $(basename "$0") --unmount-all       Unmount all / 卸载全部"
