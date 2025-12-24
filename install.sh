@@ -22,20 +22,32 @@ require_root() {
 }
 
 check_platform() {
-  local os arch
+  local os
   os=$(uname -s)
-  arch=$(uname -m)
   if [[ "$os" != "Linux" ]]; then
     warn "Non-Linux OS detected. This tool targets ARM Linux only."
     echo "       当前系统不是 Linux。此工具针对 ARM Linux 修复，暂不需要安装。"
     exit 0
   fi
+}
+
+check_architecture() {
+  local arch
+  arch=$(uname -m | tr '[:upper:]' '[:lower:]')
   case "$arch" in
-    aarch64|arm64)
+    aarch64|aarch|arm|arm64)
+      log "Detected ARM architecture: $arch"
+      echo "       检测到 ARM 架构: $arch"
       ;;
     *)
-      warn "Detected architecture: $arch. This script fixes Flutter CJK font fallback on ARM64; non-ARM64 doesn't need installation."
-      echo "       检测到架构: $arch。此脚本用于修复 ARM64 Linux 的 Flutter 字体问题，非 ARM64 无需安装。"
+      warn "Non-ARM architecture detected: $arch"
+      echo "       检测到非 ARM 架构: $arch"
+      echo ""
+      echo "This script is specifically designed to fix Flutter CJK font fallback issues on ARM platforms."
+      echo "此脚本专为修复 ARM 平台上的 Flutter CJK 字体回退问题而设计。"
+      echo ""
+      echo "Your current architecture ($arch) does not require this fix."
+      echo "您当前的架构 ($arch) 不需要此修复。"
       exit 0
       ;;
   esac
@@ -101,35 +113,27 @@ install_service_via_script() {
 
 print_summary() {
   echo
-  log "Installation completed!"
-  echo "- Binary:       $TARGET_BIN"
-  echo "- Config dir:   $CONFIG_DIR"
-  echo "- Service file: $SERVICE_FILE"
+  log "Installation completed / 安装完成!"
+  echo "- Binary:         $TARGET_BIN"
+  echo "- Config dir:     $CONFIG_DIR"
+  echo "- Service file:   $SERVICE_FILE"
   echo
-  echo "安装完成！"
-  echo "- 可执行文件: $TARGET_BIN"
-  echo "- 配置目录:   $CONFIG_DIR"
-  echo "- 服务文件:   $SERVICE_FILE"
-  echo
-  echo "Quick usage:"
+  echo "Quick usage / 快速使用:"
   echo "  sudo flutter-font-fix -a <app_name>    # Root fix via Engine SO; fallback to font mapping"
+  echo "                                         # 优先使用 SO 根因修复，回退到字体映射"
   echo "  sudo flutter-font-fix -c <app_name>    # Repair with custom fonts"
+  echo "                                         # 自定义字体修复"
   echo "  sudo flutter-font-fix -r <app_name>    # Remove/unmount mappings"
+  echo "                                         # 移除/卸载映射"
   echo "  flutter-font-fix -l                    # List mapped apps"
+  echo "                                         # 列出已映射应用"
   echo "  flutter-font-fix -d                    # Detail mappings"
-  echo
-  echo "快速使用："
-  echo "  sudo flutter-font-fix -a <app_name>    # 优先使用 SO 根因修复，回退到字体映射"
-  echo "  sudo flutter-font-fix -c <app_name>    # 自定义字体修复"
-  echo "  sudo flutter-font-fix -r <app_name>    # 移除/卸载映射"
-  echo "  flutter-font-fix -l                    # 列出已映射应用"
-  echo "  flutter-font-fix -d                    # 详细映射信息"
-  echo
-  echo "Architecture note: Non-ARM64 Linux doesn't need installation; this script targets ARM64 platforms to fix Flutter Engine font fallback."
-  echo "架构提示：非 ARM64 Linux 无需安装，此脚本仅用于修复 ARM64 平台上的 Flutter 引擎字体回退问题。"
+  echo "                                         # 详细映射信息"
+
 }
 
 main() {
+  check_architecture
   require_root
   check_platform
   install_dependencies
