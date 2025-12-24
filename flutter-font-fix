@@ -661,7 +661,7 @@ _flutter_font_fix_completion() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     case "$prev" in
-        -a|--app|-c|--custom|-r|--remove)
+        -a|--app|-c|--custom)
             if command -v snap >/dev/null 2>&1; then
                 apps="$(snap list | awk 'NR>1{print $1}')"
                 COMPREPLY=( $(compgen -W "$apps" -- "$cur") )
@@ -1230,7 +1230,7 @@ auto_install_completion() {
     fi
 }
 
-# 处理系统级命令（--startup, --uninstall, --install-service, --init 等）
+# 处理系统级命令（--startup, --uninstall, --install-service, --install-completion 等）
 handle_system_commands() {
     case "$1" in
         --startup)
@@ -1280,13 +1280,13 @@ handle_system_commands() {
             do_unmount_all
             exit 0
             ;;
-        --remove-service)
+        --uninstall-service)
             check_root
             do_unmount_all
             rm -f "$CONFIG_FILE"
             remove_system_service
-            echo "[OK] Manager fully removed."
-            echo "     管理器已彻底卸载。"
+            echo "[OK] Systemd service uninstalled and config cleared."
+            echo "     系统服务已卸载，配置已清理。"
             exit 0
             ;;
         --uninstall)
@@ -1299,7 +1299,7 @@ handle_system_commands() {
             setup_system_service
             exit 0
             ;;
-        -i|--init)
+        -i|--install-completion)
             check_root
             install_completion
             exit 0
@@ -1330,10 +1330,10 @@ parse_and_execute_command() {
         echo "  $(basename "$0") -l | --list              List mapped apps / 列出已映射应用"
         echo "  $(basename "$0") -d | --detail            Detail mappings / 详细映射信息"
         echo "  sudo $(basename "$0") --remove-all        Remove all / 移除全部"
-        echo "  sudo $(basename "$0") --remove-service    Remove manager / 移除管理器"
+        echo "  sudo $(basename "$0") --uninstall-service Uninstall systemd service / 卸载系统服务"
         echo "  sudo $(basename "$0") --uninstall         Uninstall completely / 完全卸载"
         echo "  sudo $(basename "$0") --install-service   Install systemd service / 安装系统服务"
-        echo "  sudo $(basename "$0") -i | --init         Install completion / 安装补全"
+        echo "  sudo $(basename "$0") -i | --install-completion  Install completion / 安装补全"
         echo ""
         echo "Priority: Flutter Engine SO replacement > Font mapping workaround"
         echo "优先级：Flutter 引擎 SO 替换 > 字体映射临时方案"
@@ -1362,8 +1362,8 @@ parse_and_execute_command() {
 
 # --- 主入口 ---
 
-# 检查并自动安装补全（非 --startup 和 --init 命令时执行）
-if [[ "$1" != "--startup" && "$1" != "-i" && "$1" != "--init" ]]; then
+# 检查并自动安装补全（非 --startup 和 --install-completion 命令时执行）
+if [[ "$1" != "--startup" && "$1" != "-i" && "$1" != "--install-completion" ]]; then
     auto_install_completion
 fi
 
@@ -1371,7 +1371,7 @@ fi
 initialize_github_repo_map
 
 # 处理系统级命令（直接 exit）
-# 包括：--startup, -c, -l, -d, --remove-all, --remove-service, --uninstall, --install-service, -i
+# 包括：--startup, -c, -l, -d, --remove-all, --uninstall-service, --uninstall, --install-service, -i
 if [[ $# -gt 0 ]]; then
     handle_system_commands "$@"
 fi

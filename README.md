@@ -202,7 +202,7 @@ sudo flutter-font-fix -r snap-store
 sudo flutter-font-fix --remove-all
 
 # 完全移除（清理配置和服务）
-sudo flutter-font-fix --remove-service
+sudo flutter-font-fix --uninstall-service
 ```
 
 ---
@@ -219,8 +219,8 @@ sudo flutter-font-fix --remove-service
 | `flutter-font-fix -l \| --list` | 列出已映射应用<br>List mapped apps |
 | `flutter-font-fix -d \| --detail` | 详细映射信息<br>Detail mappings |
 | `sudo flutter-font-fix --remove-all` | 移除全部<br>Remove all |
-| `sudo flutter-font-fix --remove-service` | 移除管理器<br>Remove manager |
-| `sudo flutter-font-fix -i \| --init` | 安装补全<br>Install completion |
+| `sudo flutter-font-fix --uninstall-service` | 卸载系统服务<br>Uninstall systemd service |
+| `sudo flutter-font-fix -i \| --install-completion` | 安装补全<br>Install completion |
 
 ### 使用示例
 
