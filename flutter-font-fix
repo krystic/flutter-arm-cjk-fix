@@ -17,7 +17,7 @@ FLUTTER_VERSION_CACHE="$CONFIG_DIR/flutter-versions.cache"
 
 # GitHub Raw CDN 前缀（可通过 --cdn 参数覆盖）
 RAW_CDN_PREFIX="https://raw.githubusercontent.com/"
-GITHUB_RAW_BASE="${RAW_CDN_PREFIX}krystic/flutter-arm-cjk-fix/main/lib"
+GITHUB_RAW_BASE="${RAW_CDN_PREFIX}krystic/flutter-arm-cjk-fix/feature/so-libdir-and-auto-download/lib"
 
 NOTO_DIR="/usr/share/fonts/opentype/noto"
 NOTO_REG="$NOTO_DIR/NotoSansCJK-Regular.ttc"
