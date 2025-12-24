@@ -1,0 +1,267 @@
+name: Build Flutter Engine (with Cache)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Flutter version to build (e.g., 3.24.3)'
+        required: true
+        type: string
+
+env:
+  DEPOT_TOOLS_DIR: ${{ github.workspace }}/depot_tools
+  ENGINE_DIR: ${{ github.workspace }}/flutter-engine
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6 小时超时限制
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Free up disk space
+      run: |
+        echo "清理磁盘空间..."
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /opt/hostedtoolcache/CodeQL
+        sudo docker image prune --all --force
+        df -h
+    
+    - name: Setup build environment
+      run: |
+        echo "安装编译依赖..."
+        sudo apt-get update
+        sudo apt-get install -y \
+          git curl unzip xz-utils zip \
+          libglu1-mesa ninja-build \
+          clang cmake pkg-config \
+          libgtk-3-dev libblkid-dev \
+          liblzma-dev libgcrypt20-dev \
+          libfontconfig1-dev \
+          python3 python3-pip \
+          jq
+        
+        echo "✅ 依赖安装完成"
+    
+    - name: Cache depot_tools
+      id: cache-depot-tools
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.DEPOT_TOOLS_DIR }}
+        key: depot-tools-${{ runner.os }}-v1
+        restore-keys: |
+          depot-tools-${{ runner.os }}-
+    
+    - name: Setup depot_tools
+      if: steps.cache-depot-tools.outputs.cache-hit != 'true'
+      run: |
+        echo "克隆 depot_tools..."
+        git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git "$DEPOT_TOOLS_DIR"
+    
+    - name: Add depot_tools to PATH
+      run: |
+        echo "$DEPOT_TOOLS_DIR" >> $GITHUB_PATH
+        echo "✅ depot_tools 已添加到 PATH"
+    
+    - name: Cache Flutter Engine source
+      id: cache-engine-src
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.ENGINE_DIR }}
+        key: flutter-engine-src-${{ inputs.version }}-v1
+        restore-keys: |
+          flutter-engine-src-${{ inputs.version }}-
+          flutter-engine-src-
+    
+    - name: Clone Flutter Engine
+      run: |
+        echo "准备 Flutter Engine 源码..."
+        mkdir -p "$ENGINE_DIR"
+        cd "$ENGINE_DIR"
+        
+        # 创建 .gclient 配置
+        cat > .gclient << '__EOF__'
+        solutions = [
+          {
+            "managed": False,
+            "name": "src/flutter",
+            "url": "https://github.com/flutter/engine.git",
+            "custom_deps": {},
+            "deps_file": "DEPS",
+            "safesync_url": "",
+          },
+        ]
+        __EOF__
+        
+        echo "同步代码到版本 ${{ inputs.version }}..."
+        # 设置 Git 配置避免警告
+        export GIT_CONFIG_COUNT=1
+        export GIT_CONFIG_KEY_0=protocol.file.allow
+        export GIT_CONFIG_VALUE_0=always
+        
+        # 同步代码
+        gclient sync --revision=${{ inputs.version }} --verbose
+        
+        echo "✅ 源码同步完成"
+        df -h
+    
+    - name: Modify GN configuration for fontconfig
+      run: |
+        echo "修改 GN 配置以启用 fontconfig..."
+        cd "$ENGINE_DIR/src"
+        
+        # 确保 GN 参数中包含 fontconfig 支持
+        # 这会在后续的 gn 命令中通过 --enable-fontconfig 传递
+        
+        echo "✅ 配置已准备"
+    
+    - name: Generate build files with fontconfig
+      run: |
+        echo "生成构建配置..."
+        cd "$ENGINE_DIR/src"
+        
+        ./flutter/tools/gn \
+          --target-os linux \
+          --linux-cpu arm64 \
+          --runtime-mode release \
+          --enable-fontconfig \
+          --no-goma \
+          --no-prebuilt-dart-sdk
+        
+        echo "✅ 构建配置生成完成"
+        ls -la out/linux_release_arm64/
+    
+    - name: Build Flutter Engine
+      run: |
+        echo "开始编译 Flutter Engine..."
+        cd "$ENGINE_DIR/src"
+        
+        # 使用所有可用的 CPU 核心
+        JOBS=$(nproc)
+        echo "使用 $JOBS 个并行任务"
+        
+        ninja -C out/linux_release_arm64 -j $JOBS
+        
+        echo "✅ 编译完成"
+    
+    - name: Extract and verify SO file
+      run: |
+        VERSION="${{ inputs.version }}"
+        SO_SOURCE="$ENGINE_DIR/src/out/linux_release_arm64/libflutter_linux_gtk.so"
+        SO_DEST="lib/libflutter_linux_gtk.so.$VERSION"
+        
+        echo "提取 SO 文件..."
+        mkdir -p lib
+        cp "$SO_SOURCE" "$SO_DEST"
+        
+        echo "文件信息："
+        file "$SO_DEST"
+        ls -lh "$SO_DEST"
+        
+        echo "验证 fontconfig 链接："
+        if readelf -d "$SO_DEST" | grep -q fontconfig; then
+          echo "✅ fontconfig 已正确链接"
+          readelf -d "$SO_DEST" | grep fontconfig
+        else
+          echo "❌ 警告: 未找到 fontconfig 链接"
+          readelf -d "$SO_DEST" | head -20
+          exit 1
+        fi
+    
+    - name: Update lib README
+      run: |
+        VERSION="${{ inputs.version }}"
+        SIZE=$(du -h "lib/libflutter_linux_gtk.so.$VERSION" | cut -f1)
+        
+        cat >> lib/README.md << '__EOF__'
+
+        ## Flutter $VERSION
+        - Built on: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+        - Size: $SIZE
+        - Platform: Linux ARM64
+        - Build Type: Release
+        - Features: Fontconfig enabled
+        - Built by: GitHub Actions
+
+        __EOF__
+        
+        echo "✅ README 已更新"
+    
+    - name: Commit and push
+      run: |
+        VERSION="${{ inputs.version }}"
+        
+        git config user.name "GitHub Actions Bot"
+        git config user.email "actions@github.com"
+        
+        git add lib/
+        SIZE=$(du -h lib/libflutter_linux_gtk.so.$VERSION | cut -f1)
+        git commit -m "chore: add Flutter Engine $VERSION with fontconfig support" \
+          -m "Built from flutter/engine@$VERSION" \
+          -m "Added --enable-fontconfig flag" \
+          -m "Linux ARM64 release build" \
+          -m "Auto-built by GitHub Actions" \
+          -m "Size: $SIZE" || echo "No changes to commit"
+        
+        git push
+        
+        echo "✅ 已推送到仓库"
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: flutter-${{ inputs.version }}
+        name: Flutter Engine ${{ inputs.version }} (ARM64 + Fontconfig)
+        body: |
+          ## 🚀 Flutter Engine with Fontconfig Support
+          
+          **Version**: ${{ inputs.version }}  
+          **Platform**: Linux ARM64  
+          **Build Type**: Release  
+          **Special Features**: Compiled with `--enable-fontconfig` to fix CJK font rendering
+          
+          ### 📦 What's Included
+          - `libflutter_linux_gtk.so.${{ inputs.version }}` - Flutter Engine shared library
+          
+          ### ✅ Verification
+          This build includes fontconfig support, verified by:
+          ```bash
+          readelf -d libflutter_linux_gtk.so.${{ inputs.version }} | grep fontconfig
+          # Expected output: libfontconfig.so.1
+          ```
+          
+          ### 📥 Usage
+          ```bash
+          # Download and use with flutter-font-fix tool
+          sudo flutter-font-fix -a <your-flutter-app>
+          ```
+          
+          ### 🔗 Related
+          - Original issue: CJK characters displaying as squares (□□□) on Linux ARM64
+          - Root cause: Official Flutter Engine lacks fontconfig support on ARM64
+          - Solution: This custom build with fontconfig enabled
+          
+          ---
+          **Auto-built by GitHub Actions** on $(date -u '+%Y-%m-%d')
+        files: |
+          lib/libflutter_linux_gtk.so.${{ inputs.version }}
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Cleanup
+      if: always()
+      run: |
+        echo "清理构建文件..."
+        df -h
+        # 保留缓存，只清理临时文件
+        rm -rf "$ENGINE_DIR/src/out/linux_release_arm64/obj" || true
+        echo "✅ 清理完成"

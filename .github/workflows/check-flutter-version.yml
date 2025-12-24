@@ -1,0 +1,77 @@
+name: Check Flutter Version
+
+on:
+  schedule:
+    # 每 6 小时检查一次新版本（UTC 0:00, 6:00, 12:00, 18:00）
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    
+    - name: Check Flutter latest stable version
+      id: check
+      run: |
+        echo "正在检查 Flutter 最新版本..."
+        
+        # 获取 Flutter 最新稳定版本
+        LATEST_VERSION=$(curl -sL https://api.github.com/repos/flutter/flutter/releases/latest | jq -r .tag_name)
+        echo "Latest Flutter version: $LATEST_VERSION"
+        echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+        
+        # 检查是否已存在该版本的 SO 文件
+        SO_FILE="lib/libflutter_linux_gtk.so.$LATEST_VERSION"
+        if [ -f "$SO_FILE" ]; then
+          echo "✅ Version $LATEST_VERSION already exists"
+          echo "build_needed=false" >> $GITHUB_OUTPUT
+        else
+          echo "🆕 New version detected: $LATEST_VERSION"
+          echo "build_needed=true" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Trigger build workflow
+      if: steps.check.outputs.build_needed == 'true'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          console.log('触发构建工作流: Flutter ${{ steps.check.outputs.latest_version }}');
+          
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'build-flutter-engine.yml',
+            ref: 'main',
+            inputs: {
+              version: '${{ steps.check.outputs.latest_version }}'
+            }
+          });
+          
+          console.log('✅ 构建工作流已触发');
+    
+    - name: Create issue for manual build (fallback)
+      if: steps.check.outputs.build_needed == 'true' && failure()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: '🆕 New Flutter version detected: ${{ steps.check.outputs.latest_version }}',
+            body: `检测到新的 Flutter 版本 **${{ steps.check.outputs.latest_version }}**
+            
+            请手动触发构建工作流：
+            1. 进入 [Actions](https://github.com/${{ github.repository }}/actions/workflows/build-flutter-engine.yml)
+            2. 点击 "Run workflow"
+            3. 输入版本号: \`${{ steps.check.outputs.latest_version }}\`
+            4. 点击 "Run workflow" 按钮
+            
+            或者使用自托管 Runner 触发 [build-flutter-engine-self-hosted.yml](https://github.com/${{ github.repository }}/actions/workflows/build-flutter-engine-self-hosted.yml)`,
+            labels: ['enhancement', 'auto-build']
+          });
