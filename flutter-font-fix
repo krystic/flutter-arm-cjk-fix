@@ -462,7 +462,7 @@ do_uninstall() {
     rm -f "$SCRIPT_PATH"
     
     echo "[OK] flutter-font-fix uninstalled completely."
-    echo "     已完全卸载。"
+    echo "     flutter-font-fix 已完全卸载。"
 }
 
 do_unmount_all() {
