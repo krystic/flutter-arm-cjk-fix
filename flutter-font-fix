@@ -257,9 +257,11 @@ download_so_file_if_needed() {
         mkdir -p "$SO_LIB_DIR"
         echo "[INFO] Starting download from GitHub (30-40MB, shows progress)..." >&2
         echo "       开始从 GitHub 下载（约30-40MB，将显示进度条）..." >&2
+        echo "" >&2
         if curl -fL --progress-bar "$github_so_url" -o "$so_file"; then
             chmod +x "$so_file"
             local size=$(du -h "$so_file" | cut -f1)
+            echo ""  >&2
             echo "[OK] Downloaded: $(basename "$so_file")" >&2
             echo "     下载完成: $size" >&2
             echo "$so_file"
@@ -1254,6 +1256,50 @@ case "$1" in
         echo "     管理器已彻底卸载。"
         exit 0
         ;;
+    --uninstall)
+        check_root
+        echo ""
+        echo "[INFO] Uninstalling flutter-font-fix..."
+        echo "       正在卸载 flutter-font-fix..."
+        
+        # 1. 卸载所有挂载和映射
+        echo "[*] Unmounting all replacements..."
+        do_unmount_all >/dev/null 2>&1 || true
+        
+        # 2. 删除 SO 库目录
+        if [ -d "$SO_LIB_DIR" ]; then
+            echo "[*] Removing SO library directory: $SO_LIB_DIR"
+            rm -rf "$SO_LIB_DIR"
+        fi
+        
+        # 3. 删除配置目录
+        if [ -d "$CONFIG_DIR" ]; then
+            echo "[*] Removing config directory: $CONFIG_DIR"
+            rm -rf "$CONFIG_DIR"
+        fi
+        
+        # 4. 删除 bash completion 文件
+        if [ -f "/etc/bash_completion.d/flutter-font-fix" ]; then
+            echo "[*] Removing bash completion: /etc/bash_completion.d/flutter-font-fix"
+            rm -f "/etc/bash_completion.d/flutter-font-fix"
+        fi
+        
+        # 5. 停止并删除 systemd 服务
+        if [ -f "$SERVICE_FILE" ]; then
+            echo "[*] Removing systemd service"
+            systemctl disable --now flutter-font-fix.service 2>/dev/null || true
+            rm -f "$SERVICE_FILE"
+            systemctl daemon-reload 2>/dev/null || true
+        fi
+        
+        # 6. 删除脚本本身
+        echo "[*] Removing script: $SCRIPT_PATH"
+        rm -f "$SCRIPT_PATH"
+        
+        echo "[OK] flutter-font-fix uninstalled completely."
+        echo "     flutter-font-fix 已完全卸载。"
+        exit 0
+        ;;
     --install-service)
         check_root
         setup_system_service
@@ -1290,6 +1336,7 @@ if [ -z "$APP_NAME" ] && [[ "$COMMAND" != "list" && "$COMMAND" != "detail" ]]; t
     echo "  $(basename "$0") -d | --detail            Detail mappings / 详细映射信息"
     echo "  sudo $(basename "$0") --unmount-all       Unmount all / 卸载全部"
     echo "  sudo $(basename "$0") --remove-service    Remove manager / 移除管理器"
+    echo "  sudo $(basename "$0") --uninstall         Uninstall completely / 完全卸载"
     echo "  sudo $(basename "$0") --install-service   Install systemd service / 安装系统服务"
     echo "  sudo $(basename "$0") -i | --init         Install completion / 安装补全"
     echo ""
