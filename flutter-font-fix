@@ -251,9 +251,9 @@ download_so_file_if_needed() {
     local github_so_url="$GITHUB_RAW_BASE/libflutter_linux_gtk.so.$flutter_version"
     if curl -sfI "$github_so_url" >/dev/null 2>&1; then
         mkdir -p "$SO_LIB_DIR"
-        echo "[INFO] Downloading from GitHub..."
-        echo "       正在从 GitHub 下载..."
-        if curl -L "$github_so_url" -o "$so_file" 2>&1 | grep -i 'saved\|100'; then
+        echo "[INFO] Downloading from GitHub (may take ~30-40MB)..."
+        echo "       正在从 GitHub 下载（约30-40MB，可能需要几秒钟）..."
+        if curl -fL --progress-bar "$github_so_url" -o "$so_file"; then
             chmod +x "$so_file"
             local size=$(du -h "$so_file" | cut -f1)
             echo "[OK] Downloaded: $(basename "$so_file")"
