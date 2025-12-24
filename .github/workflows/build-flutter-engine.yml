@@ -123,12 +123,12 @@ jobs:
         mkdir -p "$ENGINE_DIR"
         cd "$ENGINE_DIR"
         
-        # 先克隆 Flutter 主仓库到指定版本
-        echo "克隆 flutter/flutter 到修订 $REVISION..."
-        git clone --depth 1 --branch ${{ steps.set-vars.outputs.flutter_version }} https://github.com/flutter/flutter.git src/flutter || \
-          git clone https://github.com/flutter/flutter.git src/flutter
+        # 先克隆 Flutter 主仓库
+        echo "克隆 flutter/flutter..."
+        git clone https://github.com/flutter/flutter.git src/flutter
         
         cd src/flutter
+        echo "切换到修订 $REVISION (tag: ${{ steps.set-vars.outputs.flutter_version }})..."
         git checkout $REVISION
         cd ../..
         
