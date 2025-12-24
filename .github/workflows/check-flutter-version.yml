@@ -10,8 +10,8 @@ jobs:
   check-version:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      actions: write
+      contents: write
+      issues: write
     
     steps:
     - name: Checkout repository
