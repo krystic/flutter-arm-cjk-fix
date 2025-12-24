@@ -687,18 +687,25 @@ _flutter_font_fix_completion() {
             
             # 读取官方配置
             if [[ -f "$config_file" ]]; then
-                while IFS= read -r app; do
+                while IFS= read -r line; do
+                    [[ -z "$line" ]] && continue
+                    # 提取应用名（去掉 |method 后缀）
+                    local app="${line%%|*}"
                     [[ -n "$app" ]] && mapped_apps+=("$app")
                 done < "$config_file"
             fi
             
-            # 读取自定义配置（排除 ubuntu.conf）
+            # 读取自定义配置（排除系统配置文件：ubuntu.conf 和 github-repos.conf）
             if [[ -d "$config_dir" ]]; then
                 local official_real="$(realpath -m "$config_file" 2>/dev/null)"
+                local github_map="$config_dir/github-repos.conf"
+                local github_real="$(realpath -m "$github_map" 2>/dev/null)"
                 for cfg in "$config_dir"/*.conf; do
                     [[ ! -f "$cfg" ]] && continue
                     local cfg_real="$(realpath -m "$cfg" 2>/dev/null)"
+                    # 跳过官方配置和 GitHub 映射表
                     [[ -n "$official_real" && "$cfg_real" == "$official_real" ]] && continue
+                    [[ -n "$github_real" && "$cfg_real" == "$github_real" ]] && continue
                     mapped_apps+=("$(basename "$cfg" .conf)")
                 done
             fi
