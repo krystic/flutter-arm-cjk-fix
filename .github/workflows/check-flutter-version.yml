@@ -9,6 +9,9 @@ on:
 jobs:
   check-version:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     
     steps:
     - name: Checkout repository
@@ -79,12 +82,11 @@ jobs:
         script: |
           console.log('触发构建工作流: Flutter ${{ steps.check.outputs.latest_version }} (Engine: ${{ steps.check.outputs.engine_commit }})');
           
-          await github.rest.actions.createWorkflowDispatch({
+          await github.rest.repos.createDispatchEvent({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            workflow_id: 'build-flutter-engine.yml',
-            ref: 'main',
-            inputs: {
+            event_type: 'build-flutter-engine',
+            client_payload: {
               flutter_version: '${{ steps.check.outputs.latest_version }}',
               engine_commit: '${{ steps.check.outputs.engine_commit }}'
             }

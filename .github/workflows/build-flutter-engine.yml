@@ -11,6 +11,9 @@ on:
         description: 'Flutter Engine commit hash (optional, will auto-detect if not provided)'
         required: false
         type: string
+  
+  repository_dispatch:
+    types: [build-flutter-engine]
 
 env:
   DEPOT_TOOLS_DIR: ${{ github.workspace }}/depot_tools
@@ -22,6 +25,18 @@ jobs:
     timeout-minutes: 360  # 6 小时超时限制
     
     steps:
+    - name: Set input variables
+      id: set-vars
+      run: |
+        # 处理两种触发方式的输入参数
+        if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+          echo "flutter_version=${{ github.event.client_payload.flutter_version }}" >> $GITHUB_OUTPUT
+          echo "engine_commit=${{ github.event.client_payload.engine_commit }}" >> $GITHUB_OUTPUT
+        else
+          echo "flutter_version=${{ inputs.flutter_version }}" >> $GITHUB_OUTPUT
+          echo "engine_commit=${{ inputs.engine_commit }}" >> $GITHUB_OUTPUT
+        fi
+    
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
@@ -77,13 +92,13 @@ jobs:
     - name: Detect Engine Commit if not provided
       id: detect-commit
       run: |
-        if [ -n "${{ inputs.engine_commit }}" ]; then
-          echo "使用提供的 Engine commit: ${{ inputs.engine_commit }}"
-          ENGINE_COMMIT="${{ inputs.engine_commit }}"
+        if [ -n "${{ steps.set-vars.outputs.engine_commit }}" ]; then
+          echo "使用提供的 Engine commit: ${{ steps.set-vars.outputs.engine_commit }}"
+          ENGINE_COMMIT="${{ steps.set-vars.outputs.engine_commit }}"
         else
-          echo "自动检测 Engine commit（从 Flutter SDK ${{ inputs.flutter_version }}）..."
+          echo "自动检测 Engine commit（从 Flutter SDK ${{ steps.set-vars.outputs.flutter_version }}）..."
           # 从 flutter/flutter 仓库的对应版本获取 engine.version
-          ENGINE_COMMIT=$(curl -sL "https://raw.githubusercontent.com/flutter/flutter/${{ inputs.flutter_version }}/bin/internal/engine.version" | tr -d '[:space:]')
+          ENGINE_COMMIT=$(curl -sL "https://raw.githubusercontent.com/flutter/flutter/${{ steps.set-vars.outputs.flutter_version }}/bin/internal/engine.version" | tr -d '[:space:]')
           
           if [ -z "$ENGINE_COMMIT" ]; then
             echo "❌ 无法检测 Engine commit"
@@ -202,7 +217,7 @@ jobs:
     
     - name: Update lib README
       run: |
-        VERSION="${{ inputs.flutter_version }}"
+        VERSION="${{ steps.set-vars.outputs.flutter_version }}"
         ENGINE_COMMIT="${{ steps.detect-commit.outputs.engine_commit }}"
         SIZE=$(du -h "lib/libflutter_linux_gtk.so.$VERSION" | cut -f1)
         
@@ -223,7 +238,7 @@ jobs:
     
     - name: Commit and push
       run: |
-        VERSION="${{ inputs.flutter_version }}"
+        VERSION="${{ steps.set-vars.outputs.flutter_version }}"
         ENGINE_COMMIT="${{ steps.detect-commit.outputs.engine_commit }}"
         
         git config user.name "GitHub Actions Bot"
@@ -250,19 +265,19 @@ jobs:
         body: |
           ## 🚀 Flutter Engine with Fontconfig Support
           
-          **Flutter SDK Version**: ${{ inputs.flutter_version }}  
+          **Flutter SDK Version**: ${{ steps.set-vars.outputs.flutter_version }}  
           **Engine Commit**: ${{ steps.detect-commit.outputs.engine_commit }}  
           **Platform**: Linux ARM64  
           **Build Type**: Release  
           **Special Features**: Compiled with `--enable-fontconfig` to fix CJK font rendering
           
           ### 📦 What's Included
-          - `libflutter_linux_gtk.so.${{ inputs.flutter_version }}` - Flutter Engine shared library
+          - `libflutter_linux_gtk.so.${{ steps.set-vars.outputs.flutter_version }}` - Flutter Engine shared library
           
           ### ✅ Verification
           This build includes fontconfig support, verified by:
           ```bash
-          readelf -d libflutter_linux_gtk.so.${{ inputs.flutter_version }} | grep fontconfig
+          readelf -d libflutter_linux_gtk.so.${{ steps.set-vars.outputs.flutter_version }} | grep fontconfig
           # Expected output: libfontconfig.so.1
           ```
           
@@ -281,7 +296,7 @@ jobs:
           ---
           **Auto-built by GitHub Actions** on $(date -u '+%Y-%m-%d')
         files: |
-          lib/libflutter_linux_gtk.so.${{ inputs.flutter_version }}
+          lib/libflutter_linux_gtk.so.${{ steps.set-vars.outputs.flutter_version }}
         draft: false
         prerelease: false
       env:
