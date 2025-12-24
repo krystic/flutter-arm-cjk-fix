@@ -244,35 +244,35 @@ download_so_file_if_needed() {
         return 0
     fi
 
-    echo ""
-    echo "[INFO] SO file not found locally, checking GitHub repository..."
-    echo "       本地未找到 SO 文件，正在检查 GitHub 仓库..."
+    echo "" >&2
+    echo "[INFO] SO file not found locally, checking GitHub repository..." >&2
+    echo "       本地未找到 SO 文件，正在检查 GitHub 仓库..." >&2
 
     local github_so_url="$GITHUB_RAW_BASE/libflutter_linux_gtk.so.$flutter_version"
 
-    echo "[INFO] Checking GitHub for prebuilt SO..."
-    echo "       正在检查 GitHub 预编译 SO..."
+    echo "[INFO] Checking GitHub for prebuilt SO..." >&2
+    echo "       正在检查 GitHub 预编译 SO..." >&2
 
     if curl -sfI "$github_so_url" >/dev/null 2>&1; then
         mkdir -p "$SO_LIB_DIR"
-        echo "[INFO] Starting download from GitHub (30-40MB, shows progress)..."
-        echo "       开始从 GitHub 下载（约30-40MB，将显示进度条）..."
+        echo "[INFO] Starting download from GitHub (30-40MB, shows progress)..." >&2
+        echo "       开始从 GitHub 下载（约30-40MB，将显示进度条）..." >&2
         if curl -fL --progress-bar "$github_so_url" -o "$so_file"; then
             chmod +x "$so_file"
             local size=$(du -h "$so_file" | cut -f1)
-            echo "[OK] Downloaded: $(basename "$so_file")"
-            echo "     下载完成: $size"
+            echo "[OK] Downloaded: $(basename "$so_file")" >&2
+            echo "     下载完成: $size" >&2
             echo "$so_file"
             return 0
         else
-            echo "[ERROR] Failed to download SO file"
-            echo "        下载失败。"
+            echo "[ERROR] Failed to download SO file" >&2
+            echo "        下载失败。" >&2
             rm -f "$so_file" 2>/dev/null
             return 1
         fi
     else
-        echo "[INFO] No prebuilt SO found on GitHub for version $flutter_version"
-        echo "       GitHub 上未找到该版本的预编译 SO 文件。"
+        echo "[INFO] No prebuilt SO found on GitHub for version $flutter_version" >&2
+        echo "       GitHub 上未找到该版本的预编译 SO 文件。" >&2
         return 1
     fi
 }
