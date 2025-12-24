@@ -654,7 +654,8 @@ do_unmount() {
         done
     fi
     
-    [ -f "$CONFIG_FILE" ] && sed -i "/^$app$/d" "$CONFIG_FILE" 2>/dev/null
+    # 删除配置：匹配 app|method 或 app（旧格式）
+    [ -f "$CONFIG_FILE" ] && sed -i "/^$app(\||$)/d" "$CONFIG_FILE" 2>/dev/null
     echo "[OK] [$app] Mapping removed."
     echo "     映射已移除。"
 }
