@@ -114,9 +114,9 @@ install_service_via_script() {
 print_summary() {
   echo
   log "Installation completed / 安装完成!"
-  echo "- Binary:         $TARGET_BIN"
-  echo "- Config dir:     $CONFIG_DIR"
-  echo "- Service file:   $SERVICE_FILE"
+  echo "- 程序 / Binary:         $TARGET_BIN"
+  echo "- 配置 / Config dir:     $CONFIG_DIR"
+  echo "- 服务 / Service file:   $SERVICE_FILE"
   echo
   echo "Quick usage / 快速使用:"
   echo "  sudo flutter-font-fix -a <app_name>    # Root fix via Engine SO; fallback to font mapping"
