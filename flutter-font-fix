@@ -422,7 +422,6 @@ remove_system_service() {
 
 # 完全卸载脚本和所有配置
 do_uninstall() {
-    echo ""
     echo "[INFO] Uninstalling flutter-font-fix..."
     echo "       正在卸载"
     
@@ -526,7 +525,8 @@ do_mount() {
             echo "[WARN] App '$app' already has custom font configuration."
             echo "       应用已有自定义字体配置。"
             echo ""
-            read -r -p "Remove custom config and use official mapping? [y/N]\n移除自定义配置并使用官方映射？[y/N] " choice
+            echo "Remove custom config and use official mapping? [y/N]"
+            read -r -p "移除自定义配置并使用官方映射？[y/N] " choice
             case "$choice" in
                 [Yy]*)
                     unmount_custom_fonts_from_config "$app" >/dev/null 2>&1
@@ -756,7 +756,8 @@ prompt_install_completion() {
     fi
 
     local reply
-    read -r -p "Install Tab completion now? [y/N]\n现在安装 Tab 自动补全吗？[y/N] " reply
+    echo "Install Tab completion now? [y/N]"
+    read -r -p "现在安装 Tab 自动补全吗？[y/N] " reply
     case "$reply" in
         [Yy]*)
             if [[ $EUID -eq 0 ]]; then
@@ -990,7 +991,8 @@ do_custom_fonts() {
         echo "[WARN] App '$app' is already in official mode."
         echo "       应用已在官方模式中配置。"
         echo ""
-        read -r -p "Remove from official config and use custom fonts? [y/N]\n从官方配置移除并使用自定义字体？[y/N] " choice
+        echo "Remove from official config and use custom fonts? [y/N]"
+        read -r -p "从官方配置移除并使用自定义字体？[y/N] " choice
         case "$choice" in
             [Yy]*)
                 do_unmount "$app"
