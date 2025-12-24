@@ -1411,7 +1411,9 @@ parse_global_params() {
                     exit 1
                 fi
                 RAW_CDN_PREFIX="$2"
-                GITHUB_RAW_BASE="${RAW_CDN_PREFIX}krystic/flutter-arm-cjk-fix/feature/so-libdir-and-auto-download/lib"
+                # 从 GITHUB_RAW_BASE 中提取 owner/repo/branch/path 部分并重建
+                local repo_path="${GITHUB_RAW_BASE#https://raw.githubusercontent.com/}"
+                GITHUB_RAW_BASE="${RAW_CDN_PREFIX}${repo_path}"
                 shift 2
                 ;;
             *)
