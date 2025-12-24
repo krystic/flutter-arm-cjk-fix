@@ -11,9 +11,11 @@ CUSTOM_FONT_CONFIG_DIR="$CONFIG_DIR"
 
 # SO 文件版本检测和目录
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
-SO_LIB_DIR="$SCRIPT_DIR/lib"
+SO_LIB_DIR="/usr/local/lib/flutter-cjk"
 GITHUB_REPO_MAP="$CONFIG_DIR/github-repos.conf"
 FLUTTER_VERSION_CACHE="$CONFIG_DIR/flutter-versions.cache"
+GITHUB_RAW_BASE="https://raw.githubusercontent.com/krystic/flutter-arm-cjk-fix/main/lib"
+GITHUB_RAW_BASE="https://raw.githubusercontent.com/krystic/flutter-arm-cjk-fix/main/lib"
 
 NOTO_DIR="/usr/share/fonts/opentype/noto"
 NOTO_REG="$NOTO_DIR/NotoSansCJK-Regular.ttc"
@@ -219,12 +221,52 @@ auto_detect_flutter_version() {
     return 0
 }
 
-# 检查 SO 文件是否存在
-check_so_file_exists() {
+# 尝试下载指定版本的 SO 文件（若本地不存在）
+download_so_file_if_needed() {
     local flutter_version=$1
     local so_file="$SO_LIB_DIR/libflutter_linux_gtk.so.$flutter_version"
-    [[ -f "$so_file" ]] && echo "$so_file" && return 0
-    return 1
+
+    # 环境变量可禁用自动下载
+    if [[ "${FLUTTER_CJK_DISABLE_SO_DOWNLOAD:-0}" == "1" ]]; then
+        [[ -f "$so_file" ]] && echo "$so_file" && return 0
+        return 1
+    fi
+
+    # 已有则直接返回
+    if [[ -f "$so_file" ]]; then
+        echo "$so_file"
+        return 0
+    fi
+
+    echo ""
+    echo "[INFO] SO file not found locally, checking GitHub repository..."
+    echo "       本地未找到 SO 文件，正在检查 GitHub 仓库..."
+
+    local github_so_url="$GITHUB_RAW_BASE/libflutter_linux_gtk.so.$flutter_version"
+    if curl -sfI "$github_so_url" >/dev/null 2>&1; then
+        mkdir -p "$SO_LIB_DIR"
+        if curl -fSL "$github_so_url" -o "$so_file" 2>/dev/null; then
+            echo "[OK] Downloaded: $(basename "$so_file")"
+            echo "     下载完成: $(du -h "$so_file" | cut -f1)"
+            echo "$so_file"
+            return 0
+        else
+            echo "[ERROR] Failed to download SO file"
+            echo "        下载失败。"
+            rm -f "$so_file" 2>/dev/null
+            return 1
+        fi
+    else
+        echo "[INFO] No prebuilt SO found on GitHub for version $flutter_version"
+        echo "       GitHub 上未找到该版本的预编译 SO 文件。"
+        return 1
+    fi
+}
+
+# 检查 SO 文件是否存在（若本地缺失则尝试下载）
+check_so_file_exists() {
+    local flutter_version=$1
+    download_so_file_if_needed "$flutter_version"
 }
 
 # 挂载 SO 文件替换
@@ -1183,6 +1225,11 @@ case "$1" in
         echo "     管理器已彻底卸载。"
         exit 0
         ;;
+    --install-service)
+        check_root
+        setup_system_service
+        exit 0
+        ;;
     -i|--init)
         check_root
         install_completion
@@ -1214,6 +1261,7 @@ if [ -z "$APP_NAME" ] && [[ "$COMMAND" != "list" && "$COMMAND" != "detail" ]]; t
     echo "  $(basename "$0") -d | --detail            Detail mappings / 详细映射信息"
     echo "  sudo $(basename "$0") --unmount-all       Unmount all / 卸载全部"
     echo "  sudo $(basename "$0") --remove-service    Remove manager / 移除管理器"
+    echo "  sudo $(basename "$0") --install-service   Install systemd service / 安装系统服务"
     echo "  sudo $(basename "$0") -i | --init         Install completion / 安装补全"
     echo ""
     echo "Priority: Flutter Engine SO replacement > Font mapping workaround"
