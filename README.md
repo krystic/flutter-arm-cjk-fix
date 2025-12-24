@@ -220,8 +220,14 @@ sudo flutter-font-fix --uninstall-service
 | `flutter-font-fix -d \| --detail` | 详细映射信息<br>Detail mappings |
 | `sudo flutter-font-fix --remove-all` | 移除全部<br>Remove all |
 | `sudo flutter-font-fix --uninstall-service` | 卸载系统服务<br>Uninstall systemd service |
+| `sudo flutter-font-fix --uninstall` | 完全卸载<br>Uninstall completely |
 | `sudo flutter-font-fix -i \| --install-completion` | 安装补全<br>Install completion |
-| `flutter-font-fix --cdn <prefix>` | 覆盖 GitHub Raw CDN 前缀（含末尾斜杠）<br>Override GitHub Raw CDN prefix (with trailing slash) |
+
+### 全局参数
+
+| 参数 | 功能说明 |
+|------|---------|
+| `--cdn <prefix>` | 覆盖 GitHub Raw CDN 前缀（含末尾斜杠）<br>Override GitHub Raw CDN prefix (with trailing slash) |
 
 ### 高级选项
 
@@ -231,15 +237,13 @@ sudo flutter-font-fix --uninstall-service
 sudo flutter-font-fix -a snap-store
 
 # 使用 staticdn.net 镜像（快速）
-flutter-font-fix --cdn https://raw.staticdn.net/
-sudo flutter-font-fix -a snap-store
+sudo flutter-font-fix --cdn https://raw.staticdn.net/ -a snap-store
 
 # 使用 ghproxy.com 代理
-flutter-font-fix --cdn https://ghproxy.com/https://raw.githubusercontent.com/
-sudo flutter-font-fix -a snap-store
+sudo flutter-font-fix --cdn https://ghproxy.com/https://raw.githubusercontent.com/ -a snap-store
 ```
 
-> **提示**：`--cdn` 参数需要在修复操作之前调用，其效果作用于当前脚本执行过程。设置后立即执行后续命令即可使用该 CDN 源。
+> **提示**：`--cdn` 是全局参数，需要在同一条命令中与其他参数一起使用。它会覆盖默认的 GitHub Raw CDN 前缀，用于加速 Flutter 版本检测和 SO 文件下载。
 
 ### 使用示例
 
