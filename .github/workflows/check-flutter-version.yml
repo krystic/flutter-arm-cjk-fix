@@ -49,6 +49,18 @@ jobs:
         
         echo "最新 Flutter 版本: $LATEST_TAG"
         FLUTTER_VERSION="$LATEST_TAG"
+
+        # 通过 GitHub API 获取该 Flutter 版本对应的提交 SHA（tag 指向的对象）
+        echo "获取 Flutter 提交 SHA (refs/tags/$LATEST_TAG)..."
+        FLUTTER_COMMIT_SHA=$(curl -s "https://api.github.com/repos/flutter/flutter/git/ref/tags/$LATEST_TAG" | jq -r '.object.sha')
+        if [ -z "$FLUTTER_COMMIT_SHA" ] || [ "$FLUTTER_COMMIT_SHA" = "null" ]; then
+          echo "API 路径 git/ref 可能不可用，尝试 git/refs 备用路径..."
+          FLUTTER_COMMIT_SHA=$(curl -s "https://api.github.com/repos/flutter/flutter/git/refs/tags/$LATEST_TAG" | jq -r '.object.sha')
+        fi
+        if [ -z "$FLUTTER_COMMIT_SHA" ] || [ "$FLUTTER_COMMIT_SHA" = "null" ]; then
+          echo "❌ 无法获取 Flutter 提交 SHA"
+          exit 1
+        fi
         
         # 基于这个 tag 获取对应的 Engine commit
         echo "获取 Engine commit (从 tag $LATEST_TAG)..."
@@ -60,9 +72,11 @@ jobs:
         fi
         
         echo "Flutter SDK version: $FLUTTER_VERSION"
+        echo "Flutter commit: $FLUTTER_COMMIT_SHA"
         echo "Engine commit: $ENGINE_COMMIT"
         
         echo "latest_version=$FLUTTER_VERSION" >> $GITHUB_OUTPUT
+        echo "flutter_commit=$FLUTTER_COMMIT_SHA" >> $GITHUB_OUTPUT
         echo "engine_commit=$ENGINE_COMMIT" >> $GITHUB_OUTPUT
         
         # 检查是否已存在该版本的 SO 文件
@@ -80,7 +94,7 @@ jobs:
       uses: actions/github-script@v7
       with:
         script: |
-          console.log('触发构建工作流: Flutter ${{ steps.check.outputs.latest_version }} (Engine: ${{ steps.check.outputs.engine_commit }})');
+          console.log('触发构建工作流: Flutter ${{ steps.check.outputs.latest_version }} (Flutter commit: ${{ steps.check.outputs.flutter_commit }}, Engine: ${{ steps.check.outputs.engine_commit }})');
           
           await github.rest.repos.createDispatchEvent({
             owner: context.repo.owner,
@@ -88,6 +102,7 @@ jobs:
             event_type: 'build-flutter-engine',
             client_payload: {
               flutter_version: '${{ steps.check.outputs.latest_version }}',
+              flutter_commit: '${{ steps.check.outputs.flutter_commit }}',
               engine_commit: '${{ steps.check.outputs.engine_commit }}'
             }
           });
@@ -105,6 +120,9 @@ jobs:
             title: '🆕 New Flutter version detected: ${{ steps.check.outputs.latest_version }}',
             body: `检测到新的 Flutter 版本 **${{ steps.check.outputs.latest_version }}**
             
+            Flutter 提交: \\`${{ steps.check.outputs.flutter_commit }}\\`
+            Engine 提交: \\`${{ steps.check.outputs.engine_commit }}\\`
+
             请手动触发构建工作流：
             1. 进入 [Actions](https://github.com/${{ github.repository }}/actions/workflows/build-flutter-engine.yml)
             2. 点击 "Run workflow"
