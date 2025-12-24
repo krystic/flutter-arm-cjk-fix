@@ -11,9 +11,13 @@ CUSTOM_FONT_CONFIG_DIR="$CONFIG_DIR"
 
 # SO 文件版本检测和目录
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
-SO_LIB_DIR="$SCRIPT_DIR/lib"
+SO_LIB_DIR="/usr/local/lib/flutter-cjk"
 GITHUB_REPO_MAP="$CONFIG_DIR/github-repos.conf"
 FLUTTER_VERSION_CACHE="$CONFIG_DIR/flutter-versions.cache"
+
+# GitHub Raw CDN 前缀（可通过 --cdn 参数覆盖）
+RAW_CDN_PREFIX="https://raw.githubusercontent.com/"
+GITHUB_RAW_BASE="${RAW_CDN_PREFIX}krystic/flutter-arm-cjk-fix/main/lib"
 
 NOTO_DIR="/usr/share/fonts/opentype/noto"
 NOTO_REG="$NOTO_DIR/NotoSansCJK-Regular.ttc"
@@ -99,25 +103,32 @@ get_commit_id() {
 get_flutter_version_from_fvmrc() {
     local repo=$1
     local commit=$2
-    
+
+    # 规范化仓库路径为 owner/repo 形式
+    local repo_path=${repo#https://github.com/}
+    repo_path=${repo_path#http://github.com/}
+    repo_path=${repo_path%.git}
+
+    local raw_base="${RAW_CDN_PREFIX}${repo_path}/${commit}"
+
     # 尝试 .fvmrc
-    local fvmrc_url="${repo}/raw/${commit}/.fvmrc"
+    local fvmrc_url="$raw_base/.fvmrc"
     local flutter_version=$(curl -sL "$fvmrc_url" 2>/dev/null | grep -oP '"flutter"\s*:\s*"\K[0-9.]+')
-    
+
     if [[ -n "$flutter_version" ]]; then
         echo "$flutter_version"
         return 0
     fi
-    
+
     # 尝试 .fvm/fvm_config.json
-    local fvm_config_url="${repo}/raw/${commit}/.fvm/fvm_config.json"
+    local fvm_config_url="$raw_base/.fvm/fvm_config.json"
     flutter_version=$(curl -sL "$fvm_config_url" 2>/dev/null | grep -oP '"flutterSdkVersion"\s*:\s*"\K[0-9.]+')
-    
+
     if [[ -n "$flutter_version" ]]; then
         echo "$flutter_version"
         return 0
     fi
-    
+
     return 1
 }
 
@@ -219,12 +230,62 @@ auto_detect_flutter_version() {
     return 0
 }
 
-# 检查 SO 文件是否存在
-check_so_file_exists() {
+# 尝试下载指定版本的 SO 文件（若本地不存在）
+download_so_file_if_needed() {
     local flutter_version=$1
     local so_file="$SO_LIB_DIR/libflutter_linux_gtk.so.$flutter_version"
-    [[ -f "$so_file" ]] && echo "$so_file" && return 0
-    return 1
+
+    # 环境变量可禁用自动下载
+    if [[ "${FLUTTER_CJK_DISABLE_SO_DOWNLOAD:-0}" == "1" ]]; then
+        [[ -f "$so_file" ]] && echo "$so_file" && return 0
+        return 1
+    fi
+
+    # 已有则直接返回
+    if [[ -f "$so_file" ]]; then
+        echo "$so_file"
+        return 0
+    fi
+
+    echo "" >&2
+    echo "[INFO] SO file not found locally, checking GitHub repository..." >&2
+    echo "       本地未找到 SO 文件，正在检查 GitHub 仓库..." >&2
+
+    local github_so_url="$GITHUB_RAW_BASE/libflutter_linux_gtk.so.$flutter_version"
+
+    echo "[INFO] Checking GitHub for prebuilt SO..." >&2
+    echo "       正在检查 GitHub 预编译 SO..." >&2
+
+    if curl -sfI "$github_so_url" >/dev/null 2>&1; then
+        mkdir -p "$SO_LIB_DIR"
+        echo "[INFO] Starting download from GitHub (30-40MB, shows progress)..." >&2
+        echo "       开始从 GitHub 下载（约30-40MB，将显示进度条）..." >&2
+        echo "" >&2
+        if curl -fL --progress-bar "$github_so_url" -o "$so_file"; then
+            chmod +x "$so_file"
+            local size=$(du -h "$so_file" | cut -f1)
+            echo ""  >&2
+            echo "[OK] Downloaded: $(basename "$so_file")" >&2
+            echo "     下载完成: $size" >&2
+            echo "$so_file"
+            return 0
+        else
+            echo "[ERROR] Failed to download SO file" >&2
+            echo "        下载失败。" >&2
+            rm -f "$so_file" 2>/dev/null
+            return 1
+        fi
+    else
+        echo "[INFO] No prebuilt SO found on GitHub for version $flutter_version" >&2
+        echo "       GitHub 上未找到该版本的预编译 SO 文件。" >&2
+        return 1
+    fi
+}
+
+# 检查 SO 文件是否存在（若本地缺失则尝试下载）
+check_so_file_exists() {
+    local flutter_version=$1
+    download_so_file_if_needed "$flutter_version"
 }
 
 # 挂载 SO 文件替换
@@ -235,15 +296,21 @@ mount_so_replacement() {
     local snap_path="/snap/$app/current"
     [[ ! -d "$snap_path" ]] && return 1
     
+    # 确保 SO 文件有执行权限
+    [[ -f "$so_file" ]] && chmod +x "$so_file" 2>/dev/null || true
+    
     # 查找应用中的 libflutter_linux_gtk.so
     local target_so=$(find -L "$snap_path" -name "libflutter_linux_gtk.so*" | head -n1)
-    [[ -z "$target_so" ]] && return 1
+    [[ -z "$target_so" ]] && {
+        echo "[ERROR] libflutter_linux_gtk.so not found in app: $app"
+        return 1
+    }
     
     echo ""
     echo "[INFO] Mounting Flutter Engine replacement..."
     echo "       正在挂载 Flutter 引擎替换文件..."
-    echo "       Source: $(basename "$so_file")"
-    echo "       Target: $(basename "$target_so")"
+    echo "       Source: $(basename "$so_file") (size: $(du -h "$so_file" | cut -f1))"
+    echo "       Target: $target_so"
     
     # 先卸载可能存在的映射
     umount -l "$target_so" 2>/dev/null || true
@@ -263,15 +330,19 @@ mount_so_replacement() {
 # 卸载 SO 文件替换
 unmount_so_replacement() {
     local app=$1
+    local unmounted=0
     
-    local snap_path="/snap/$app/current"
-    [[ ! -d "$snap_path" ]] && return 1
+    # Try to find and unmount SO mount points for this app
+    # Handle both /snap/$app/current and /snap/$app/* paths
+    while IFS= read -r mount_point; do
+        [[ -z "$mount_point" ]] && continue
+        if umount -l "$mount_point" 2>/dev/null; then
+            ((unmounted++))
+            echo "[OK] [$app] Unmounted: $(basename "$mount_point")"
+        fi
+    done < <(mount -l 2>/dev/null | grep -E "^/.* on /snap/$app/.*/.*libflutter_linux_gtk\.so" | awk '{print $3}')
     
-    local target_so=$(find -L "$snap_path" -name "libflutter_linux_gtk.so*" | head -n1)
-    [[ -z "$target_so" ]] && return 1
-    
-    if umount -l "$target_so" 2>/dev/null; then
-        echo "[OK] [$app] Flutter Engine SO replacement unmounted"
+    if [[ $unmounted -gt 0 ]]; then
         echo "     SO 文件替换已卸载。"
         return 0
     fi
@@ -333,17 +404,72 @@ RemainAfterExit=yes
 [Install]
 WantedBy=multi-user.target
 EOF
-        systemctl daemon-reload
-        systemctl enable flutter-font-fix.service
+        systemctl daemon-reload 2>/dev/null
+        systemctl enable flutter-font-fix.service 2>/dev/null
         echo "[OK] Systemd service enabled."
         echo "     系统服务已启用。"
     fi
 }
 
+# 删除 systemd 服务
+remove_system_service() {
+    if [ -f "$SERVICE_FILE" ]; then
+        systemctl disable --now flutter-font-fix.service 2>/dev/null || true
+        rm -f "$SERVICE_FILE"
+        systemctl daemon-reload 2>/dev/null || true
+    fi
+}
+
+# 完全卸载脚本和所有配置
+do_uninstall() {
+    echo "[INFO] Uninstalling flutter-font-fix..."
+    echo "       正在卸载"
+    
+    # 1. 卸载所有挂载和映射
+    echo "[*] Unmounting all replacements..."
+    echo "    卸载所有挂载和映射..."
+    do_unmount_all >/dev/null 2>&1 || true
+    
+    # 2. 删除 SO 库目录
+    if [ -d "$SO_LIB_DIR" ]; then
+        echo "[*] Removing SO library directory: $SO_LIB_DIR"
+        echo "    删除 SO 库目录"
+        rm -rf "$SO_LIB_DIR"
+    fi
+    
+    # 3. 删除配置目录
+    if [ -d "$CONFIG_DIR" ]; then
+        echo "[*] Removing config directory: $CONFIG_DIR"
+        echo "    删除配置目录"
+        rm -rf "$CONFIG_DIR"
+    fi
+    
+    # 4. 删除 bash completion 文件
+    if [ -f "/etc/bash_completion.d/flutter-font-fix" ]; then
+        echo "[*] Removing bash completion: /etc/bash_completion.d/flutter-font-fix"
+        echo "    删除 bash 补全文件"
+        rm -f "/etc/bash_completion.d/flutter-font-fix"
+    fi
+    
+    # 5. 停止并删除 systemd 服务
+    echo "[*] Removing systemd service"
+    echo "    删除 systemd 服务"
+    remove_system_service
+    
+    # 6. 删除脚本本身
+    echo "[*] Removing script: $SCRIPT_PATH"
+    echo "    删除脚本"
+    rm -f "$SCRIPT_PATH"
+    
+    echo "[OK] flutter-font-fix uninstalled completely."
+    echo "     flutter-font-fix 已完全卸载。"
+}
+
 do_unmount_all() {
     echo ""
-    echo "[INFO] Unmounting all font mappings..."
-    echo "       正在卸载所有字体映射..."
+    echo "[INFO] Removing all SO replacements and font mappings..."
+    echo "       正在移除所有 SO 替换和字体映射..."
+    
     if [ -f "$CONFIG_FILE" ]; then
         local apps=()
         while IFS= read -r line; do
@@ -358,14 +484,18 @@ do_unmount_all() {
         done < "$CONFIG_FILE"
         
         for app in "${apps[@]}"; do
+            # 卸载 SO 替换（如有）
+            unmount_so_replacement "$app" 2>/dev/null || true
+            
+            # 卸载字体映射
             local SNAP_PATH="/snap/$app/current/"
             local TARGET_DIR=$(find -L "$SNAP_PATH" -name "Ubuntu-R.ttf" -printf '%h\n' 2>/dev/null | head -n 1)
             if [ -n "$TARGET_DIR" ]; then
                 for f in "$TARGET_DIR"/Ubuntu-*.ttf; do
                     umount -l "$f" 2>/dev/null
                 done
-                echo "[OK] [$app] Unmounted."
-                echo "     映射已释放。"
+                echo "[OK] [$app] Removed."
+                echo "     映射已移除。"
             fi
         done
     else
@@ -395,7 +525,8 @@ do_mount() {
             echo "[WARN] App '$app' already has custom font configuration."
             echo "       应用已有自定义字体配置。"
             echo ""
-            read -r -p "Remove custom config and use official mapping? [y/N]\n移除自定义配置并使用官方映射？[y/N] " choice
+            echo "Remove custom config and use official mapping? [y/N]"
+            read -r -p "移除自定义配置并使用官方映射？[y/N] " choice
             case "$choice" in
                 [Yy]*)
                     unmount_custom_fonts_from_config "$app" >/dev/null 2>&1
@@ -523,7 +654,10 @@ do_unmount() {
         done
     fi
     
-    [ -f "$CONFIG_FILE" ] && sed -i "/^$app$/d" "$CONFIG_FILE" 2>/dev/null
+    # 删除配置：匹配 app|method（新格式）或 app（旧格式）
+    if [ -f "$CONFIG_FILE" ]; then
+        sed -i "/^$app|/d; /^$app$/d" "$CONFIG_FILE" 2>/dev/null
+    fi
     echo "[OK] [$app] Mapping removed."
     echo "     映射已移除。"
 }
@@ -545,7 +679,7 @@ _flutter_font_fix_completion() {
                 COMPREPLY=( $(compgen -W "$apps" -- "$cur") )
             fi
             ;;
-        -u|--unmount)
+        -r|--remove)
             # 补全已映射的应用
             local config_dir="/etc/flutter-cjk"
             local config_file="$config_dir/ubuntu.conf"
@@ -553,18 +687,25 @@ _flutter_font_fix_completion() {
             
             # 读取官方配置
             if [[ -f "$config_file" ]]; then
-                while IFS= read -r app; do
+                while IFS= read -r line; do
+                    [[ -z "$line" ]] && continue
+                    # 提取应用名（去掉 |method 后缀）
+                    local app="${line%%|*}"
                     [[ -n "$app" ]] && mapped_apps+=("$app")
                 done < "$config_file"
             fi
             
-            # 读取自定义配置（排除 ubuntu.conf）
+            # 读取自定义配置（排除系统配置文件：ubuntu.conf 和 github-repos.conf）
             if [[ -d "$config_dir" ]]; then
                 local official_real="$(realpath -m "$config_file" 2>/dev/null)"
+                local github_map="$config_dir/github-repos.conf"
+                local github_real="$(realpath -m "$github_map" 2>/dev/null)"
                 for cfg in "$config_dir"/*.conf; do
                     [[ ! -f "$cfg" ]] && continue
                     local cfg_real="$(realpath -m "$cfg" 2>/dev/null)"
+                    # 跳过官方配置和 GitHub 映射表
                     [[ -n "$official_real" && "$cfg_real" == "$official_real" ]] && continue
+                    [[ -n "$github_real" && "$cfg_real" == "$github_real" ]] && continue
                     mapped_apps+=("$(basename "$cfg" .conf)")
                 done
             fi
@@ -615,7 +756,8 @@ prompt_install_completion() {
     fi
 
     local reply
-    read -r -p "Install Tab completion now? [y/N]\n现在安装 Tab 自动补全吗？[y/N] " reply
+    echo "Install Tab completion now? [y/N]"
+    read -r -p "现在安装 Tab 自动补全吗？[y/N] " reply
     case "$reply" in
         [Yy]*)
             if [[ $EUID -eq 0 ]]; then
@@ -849,7 +991,8 @@ do_custom_fonts() {
         echo "[WARN] App '$app' is already in official mode."
         echo "       应用已在官方模式中配置。"
         echo ""
-        read -r -p "Remove from official config and use custom fonts? [y/N]\n从官方配置移除并使用自定义字体？[y/N] " choice
+        echo "Remove from official config and use custom fonts? [y/N]"
+        read -r -p "从官方配置移除并使用自定义字体？[y/N] " choice
         case "$choice" in
             [Yy]*)
                 do_unmount "$app"
@@ -1108,134 +1251,203 @@ auto_install_completion() {
     fi
 }
 
-# 检查并自动安装补全（非 --startup 和 --init 命令时执行）
-if [[ "$1" != "--startup" && "$1" != "-i" && "$1" != "--init" ]]; then
+# 处理系统级命令（--startup, --uninstall, --install-service, --install-completion 等）
+handle_system_commands() {
+    case "$1" in
+        --startup)
+            [ ! -f "$CONFIG_FILE" ] && {
+                mount_all_custom_fonts
+                exit 0
+            }
+            while IFS= read -r line; do
+                [[ -z "$line" ]] && continue
+                # 解析格式：app|method 或 app（旧格式）
+                app=""
+                if [[ "$line" == *"|"* ]]; then
+                    app="${line%%|*}"
+                else
+                    app="$line"
+                fi
+                if [ -n "$app" ]; then
+                    if ! do_mount "$app" "true"; then
+                        echo "[WARN] Failed to mount fonts for: $app, skipping."
+                        echo "       跳过该应用的字体挂载。"
+                    fi
+                fi
+            done < "$CONFIG_FILE"
+            # 也加载并挂载自定义字体配置
+            mount_all_custom_fonts
+            exit 0
+            ;;
+        -c|--custom)
+            check_root
+            if [ -z "$2" ]; then
+                echo "用法 / Usage: $0 -c <app_name>"
+                exit 1
+            fi
+            do_custom_fonts "$2"
+            exit 0
+            ;;
+        -l|--list)
+            list_mapped_apps
+            exit 0
+            ;;
+        -d|--detail)
+            list_mapped_apps_detail
+            exit 0
+            ;;
+        --remove-all)
+            check_root
+            do_unmount_all
+            exit 0
+            ;;
+        --uninstall-service)
+            check_root
+            do_unmount_all
+            rm -f "$CONFIG_FILE"
+            remove_system_service
+            echo "[OK] Systemd service uninstalled and config cleared."
+            echo "     系统服务已卸载，配置已清理。"
+            exit 0
+            ;;
+        --uninstall)
+            check_root
+            do_uninstall
+            exit 0
+            ;;
+        --install-service)
+            check_root
+            setup_system_service
+            exit 0
+            ;;
+        -i|--install-completion)
+            check_root
+            install_completion
+            exit 0
+            ;;
+    esac
+}
+
+# 解析全局参数（如 --cdn）
+
+# 解析参数并执行应用级命令
+parse_and_execute_command() {
+    local COMMAND="mount"
+    local APP_NAME=""
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -r|--remove) COMMAND="unmount"; APP_NAME="$2"; shift 2 ;;
+            -a|--app) APP_NAME="$2"; shift 2 ;;
+            -l|--list) COMMAND="list"; shift ;;
+            -d|--detail) COMMAND="detail"; shift ;;
+            *) APP_NAME="$1"; shift ;;
+        esac
+    done
+
+    if [ -z "$APP_NAME" ] && [[ "$COMMAND" != "list" && "$COMMAND" != "detail" ]]; then
+        echo "Usage:"
+        echo "  sudo $(basename "$0") -a <app_name>       Repair with Flutter Engine or fonts / 使用引擎修复或字体映射"
+        echo "  sudo $(basename "$0") -c <app_name>       Repair with custom fonts / 自定义字体修复"
+        echo "  sudo $(basename "$0") -r <app_name>       Remove/unmount mappings / 移除/卸载映射"
+        echo "  $(basename "$0") -l | --list              List mapped apps / 列出已映射应用"
+        echo "  $(basename "$0") -d | --detail            Detail mappings / 详细映射信息"
+        echo "  sudo $(basename "$0") --remove-all        Remove all / 移除全部"
+        echo ""
+        echo "  sudo $(basename "$0") -i | --install-completion  Install completion / 安装补全"
+        echo "  sudo $(basename "$0") --install-service   Install systemd service / 安装系统服务"
+        echo ""
+        echo "  sudo $(basename "$0") --uninstall-service Uninstall systemd service / 卸载系统服务"
+        echo "  sudo $(basename "$0") --uninstall         Uninstall completely / 完全卸载"
+        echo ""
+        echo "Global options / 全局参数:"
+        echo "  --cdn <prefix>                         Override GitHub Raw CDN prefix (with trailing slash)"
+        echo "                                         覆盖 GitHub Raw CDN 前缀(需末尾斜杠)"
+        echo ""
+        echo "Examples:"
+        echo "  $(basename "$0") --cdn https://raw.staticdn.net/ -a snap-store"
+        echo "  $(basename "$0") --cdn https://ghproxy.com/https://raw.githubusercontent.com/ -a snap-store"
+        echo ""
+        echo "Priority: Flutter Engine SO replacement > Font mapping workaround"
+        echo "优先级：Flutter 引擎 SO 替换 > 字体映射临时方案"
+        prompt_install_completion
+        exit 1
+    fi
+
+    if [[ "$COMMAND" == "mount" ]]; then
+        [ ! -f "$NOTO_REG" ] && apt update && apt install -y fonts-noto-cjk
+        if ! do_mount "$APP_NAME" "false"; then
+            echo "[ERROR] App not found or no target fonts: $APP_NAME"
+            echo "        未找到应用或未找到可替换字体。"
+            prompt_install_completion
+            exit 1
+        fi
+    elif [[ "$COMMAND" == "list" ]]; then
+        list_mapped_apps
+        exit 0
+    elif [[ "$COMMAND" == "detail" ]]; then
+        list_mapped_apps_detail
+        exit 0
+    else
+        unmount_app "$APP_NAME"
+    fi
+}
+
+# --- 主入口 ---
+
+# 先从参数中提取 --cdn 全局参数
+parse_global_params() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --cdn)
+                if [[ -z "$2" ]]; then
+                    echo "[ERROR] --cdn requires a prefix argument"
+                    echo "        --cdn 需要一个前缀参数"
+                    echo ""
+                    echo "Usage: $(basename "$0") --cdn <prefix> <command> [args]"
+                    echo "Examples:"
+                    echo "  $(basename "$0") --cdn https://raw.staticdn.net/ -a snap-store"
+                    echo "  $(basename "$0") --cdn https://ghproxy.com/https://raw.githubusercontent.com/ -a snap-store"
+                    exit 1
+                fi
+                RAW_CDN_PREFIX="$2"
+                # 从 GITHUB_RAW_BASE 中提取 owner/repo/branch/path 部分并重建
+                local repo_path="${GITHUB_RAW_BASE#https://raw.githubusercontent.com/}"
+                GITHUB_RAW_BASE="${RAW_CDN_PREFIX}${repo_path}"
+                shift 2
+                ;;
+            *)
+                # 不是全局参数，会退出并返回剩余的参数
+                break
+                ;;
+        esac
+    done
+    # 输出剩余的参数（用于 eval 恢复）
+    for arg in "$@"; do
+        printf '%s\n' "$arg"
+    done
+}
+
+# 检查并自动安装补全（非 --startup 和 --install-completion 命令时执行）
+if [[ "${1:-}" != "--startup" && "${1:-}" != "-i" && "${1:-}" != "--install-completion" ]]; then
     auto_install_completion
 fi
 
 # 初始化 GitHub 仓库对照表（首次运行时创建）
 initialize_github_repo_map
 
-case "$1" in
-    --startup)
-        [ ! -f "$CONFIG_FILE" ] && {
-            mount_all_custom_fonts
-            exit 0
-        }
-        while IFS= read -r line; do
-            [[ -z "$line" ]] && continue
-            # 解析格式：app|method 或 app（旧格式）
-            app=""
-            if [[ "$line" == *"|"* ]]; then
-                app="${line%%|*}"
-            else
-                app="$line"
-            fi
-            if [ -n "$app" ]; then
-                if ! do_mount "$app" "true"; then
-                    echo "[WARN] Failed to mount fonts for: $app, skipping."
-                    echo "       跳过该应用的字体挂载。"
-                fi
-            fi
-        done < "$CONFIG_FILE"
-        # 也加载并挂载自定义字体配置
-        mount_all_custom_fonts
-        exit 0
-        ;;
-    -c|--custom)
-        check_root
-        if [ -z "$2" ]; then
-            echo "用法 / Usage: $0 -c <app_name>"
-            exit 1
-        fi
-        do_custom_fonts "$2"
-        exit 0
-        ;;
-    -l|--list)
-        list_mapped_apps
-        exit 0
-        ;;
-    -d|--detail)
-        list_mapped_apps_detail
-        exit 0
-        ;;
-    --unmount-all)
-        check_root
-        do_unmount_all
-        # 注意：此模式下我们选择保留配置文件，以便下次启动或手动执行 --startup 时恢复
-        # 如果你想卸载的同时清空配置，请使用下面的逻辑：
-        # rm -f "$CONFIG_FILE" 
-        exit 0
-        ;;
-    --remove-service)
-        check_root
-        # 1. 先执行全量卸载
-        do_unmount_all
-        # 2. 清理配置文件
-        rm -f "$CONFIG_FILE"
-        # 3. 停止并注销服务
-        if [ -f "$SERVICE_FILE" ]; then
-            systemctl disable --now flutter-font-fix.service 2>/dev/null
-            rm -f "$SERVICE_FILE"
-            systemctl daemon-reload
-        fi
-        echo "[OK] Manager fully removed."
-        echo "     管理器已彻底卸载。"
-        exit 0
-        ;;
-    -i|--init)
-        check_root
-        install_completion
-        exit 0
-        ;;
-esac
+# 先解析全局参数（--cdn 等），然后处理剩余的命令
+mapfile -t params < <(parse_global_params "$@")
+set -- "${params[@]}"
 
-# 交互模式
+# 处理系统级命令（直接 exit）
+# 包括：--startup, -c, -l, -d, --remove-all, --uninstall-service, --uninstall, --install-service, -i
+if [[ $# -gt 0 ]]; then
+    handle_system_commands "$@"
+fi
+
+# 到此处说明是交互模式，需要 root 权限
 check_root
-COMMAND="mount"
-APP_NAME=""
 
-while [[ $# -gt 0 ]]; do
-  case $1 in
-        -u|--unmount) COMMAND="unmount"; APP_NAME="$2"; shift 2 ;;
-        -a|--app) APP_NAME="$2"; shift 2 ;;
-        -l|--list) COMMAND="list"; shift ;;
-        -d|--detail) COMMAND="detail"; shift ;;
-        *) APP_NAME="$1"; shift ;;
-  esac
-done
-
-if [ -z "$APP_NAME" ] && [[ "$COMMAND" != "list" && "$COMMAND" != "detail" ]]; then
-    echo "Usage:"
-    echo "  sudo $(basename "$0") -a <app_name>       Repair with Flutter Engine or fonts / 使用引擎修复或字体映射"
-    echo "  sudo $(basename "$0") -c <app_name>       Repair with custom fonts / 自定义字体修复"
-    echo "  sudo $(basename "$0") -u <app_name>       Unmount mappings / 卸载映射"
-    echo "  $(basename "$0") -l | --list              List mapped apps / 列出已映射应用"
-    echo "  $(basename "$0") -d | --detail            Detail mappings / 详细映射信息"
-    echo "  sudo $(basename "$0") --unmount-all       Unmount all / 卸载全部"
-    echo "  sudo $(basename "$0") --remove-service    Remove manager / 移除管理器"
-    echo "  sudo $(basename "$0") -i | --init         Install completion / 安装补全"
-    echo ""
-    echo "Priority: Flutter Engine SO replacement > Font mapping workaround"
-    echo "优先级：Flutter 引擎 SO 替换 > 字体映射临时方案"
-    prompt_install_completion
-    exit 1
-fi
-
-if [[ "$COMMAND" == "mount" ]]; then
-    [ ! -f "$NOTO_REG" ] && apt update && apt install -y fonts-noto-cjk
-    if ! do_mount "$APP_NAME" "false"; then
-        echo "[ERROR] App not found or no target fonts: $APP_NAME"
-        echo "        未找到应用或未找到可替换字体。"
-        prompt_install_completion
-        exit 1
-    fi
-elif [[ "$COMMAND" == "list" ]]; then
-    list_mapped_apps
-    exit 0
-elif [[ "$COMMAND" == "detail" ]]; then
-    list_mapped_apps_detail
-    exit 0
-else
-    unmount_app "$APP_NAME"
-fi
+# 解析参数并执行应用级命令
+parse_and_execute_command "$@"
