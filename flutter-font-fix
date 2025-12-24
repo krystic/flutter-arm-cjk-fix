@@ -325,15 +325,19 @@ mount_so_replacement() {
 # 卸载 SO 文件替换
 unmount_so_replacement() {
     local app=$1
+    local unmounted=0
     
-    local snap_path="/snap/$app/current"
-    [[ ! -d "$snap_path" ]] && return 1
+    # Try to find and unmount SO mount points for this app
+    # Handle both /snap/$app/current and /snap/$app/* paths
+    while IFS= read -r mount_point; do
+        [[ -z "$mount_point" ]] && continue
+        if umount -l "$mount_point" 2>/dev/null; then
+            ((unmounted++))
+            echo "[OK] [$app] Unmounted: $(basename "$mount_point")"
+        fi
+    done < <(mount -l 2>/dev/null | grep -E "^/.* on /snap/$app/.*/.*libflutter_linux_gtk\.so" | awk '{print $3}')
     
-    local target_so=$(find -L "$snap_path" -name "libflutter_linux_gtk.so*" | head -n1)
-    [[ -z "$target_so" ]] && return 1
-    
-    if umount -l "$target_so" 2>/dev/null; then
-        echo "[OK] [$app] Flutter Engine SO replacement unmounted"
+    if [[ $unmounted -gt 0 ]]; then
         echo "     SO 文件替换已卸载。"
         return 0
     fi
