@@ -119,7 +119,6 @@ main() {
   init_config
   init_so_dir
   install_service_via_script
-  install_completion
   print_summary
 }
 
