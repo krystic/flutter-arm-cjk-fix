@@ -1230,6 +1230,138 @@ auto_install_completion() {
     fi
 }
 
+# 处理系统级命令（--startup, --uninstall, --install-service, --init 等）
+handle_system_commands() {
+    case "$1" in
+        --startup)
+            [ ! -f "$CONFIG_FILE" ] && {
+                mount_all_custom_fonts
+                exit 0
+            }
+            while IFS= read -r line; do
+                [[ -z "$line" ]] && continue
+                # 解析格式：app|method 或 app（旧格式）
+                app=""
+                if [[ "$line" == *"|"* ]]; then
+                    app="${line%%|*}"
+                else
+                    app="$line"
+                fi
+                if [ -n "$app" ]; then
+                    if ! do_mount "$app" "true"; then
+                        echo "[WARN] Failed to mount fonts for: $app, skipping."
+                        echo "       跳过该应用的字体挂载。"
+                    fi
+                fi
+            done < "$CONFIG_FILE"
+            # 也加载并挂载自定义字体配置
+            mount_all_custom_fonts
+            exit 0
+            ;;
+        -c|--custom)
+            check_root
+            if [ -z "$2" ]; then
+                echo "用法 / Usage: $0 -c <app_name>"
+                exit 1
+            fi
+            do_custom_fonts "$2"
+            exit 0
+            ;;
+        -l|--list)
+            list_mapped_apps
+            exit 0
+            ;;
+        -d|--detail)
+            list_mapped_apps_detail
+            exit 0
+            ;;
+        --unmount-all)
+            check_root
+            do_unmount_all
+            exit 0
+            ;;
+        --remove-service)
+            check_root
+            do_unmount_all
+            rm -f "$CONFIG_FILE"
+            remove_system_service
+            echo "[OK] Manager fully removed."
+            echo "     管理器已彻底卸载。"
+            exit 0
+            ;;
+        --uninstall)
+            check_root
+            do_uninstall
+            exit 0
+            ;;
+        --install-service)
+            check_root
+            setup_system_service
+            exit 0
+            ;;
+        -i|--init)
+            check_root
+            install_completion
+            exit 0
+            ;;
+    esac
+}
+
+# 解析参数并执行应用级命令
+parse_and_execute_command() {
+    local COMMAND="mount"
+    local APP_NAME=""
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -u|--unmount) COMMAND="unmount"; APP_NAME="$2"; shift 2 ;;
+            -a|--app) APP_NAME="$2"; shift 2 ;;
+            -l|--list) COMMAND="list"; shift ;;
+            -d|--detail) COMMAND="detail"; shift ;;
+            *) APP_NAME="$1"; shift ;;
+        esac
+    done
+
+    if [ -z "$APP_NAME" ] && [[ "$COMMAND" != "list" && "$COMMAND" != "detail" ]]; then
+        echo "Usage:"
+        echo "  sudo $(basename "$0") -a <app_name>       Repair with Flutter Engine or fonts / 使用引擎修复或字体映射"
+        echo "  sudo $(basename "$0") -c <app_name>       Repair with custom fonts / 自定义字体修复"
+        echo "  sudo $(basename "$0") -u <app_name>       Unmount mappings / 卸载映射"
+        echo "  $(basename "$0") -l | --list              List mapped apps / 列出已映射应用"
+        echo "  $(basename "$0") -d | --detail            Detail mappings / 详细映射信息"
+        echo "  sudo $(basename "$0") --unmount-all       Unmount all / 卸载全部"
+        echo "  sudo $(basename "$0") --remove-service    Remove manager / 移除管理器"
+        echo "  sudo $(basename "$0") --uninstall         Uninstall completely / 完全卸载"
+        echo "  sudo $(basename "$0") --install-service   Install systemd service / 安装系统服务"
+        echo "  sudo $(basename "$0") -i | --init         Install completion / 安装补全"
+        echo ""
+        echo "Priority: Flutter Engine SO replacement > Font mapping workaround"
+        echo "优先级：Flutter 引擎 SO 替换 > 字体映射临时方案"
+        prompt_install_completion
+        exit 1
+    fi
+
+    if [[ "$COMMAND" == "mount" ]]; then
+        [ ! -f "$NOTO_REG" ] && apt update && apt install -y fonts-noto-cjk
+        if ! do_mount "$APP_NAME" "false"; then
+            echo "[ERROR] App not found or no target fonts: $APP_NAME"
+            echo "        未找到应用或未找到可替换字体。"
+            prompt_install_completion
+            exit 1
+        fi
+    elif [[ "$COMMAND" == "list" ]]; then
+        list_mapped_apps
+        exit 0
+    elif [[ "$COMMAND" == "detail" ]]; then
+        list_mapped_apps_detail
+        exit 0
+    else
+        unmount_app "$APP_NAME"
+    fi
+}
+
+# --- 主入口 ---
+
 # 检查并自动安装补全（非 --startup 和 --init 命令时执行）
 if [[ "$1" != "--startup" && "$1" != "-i" && "$1" != "--init" ]]; then
     auto_install_completion
@@ -1238,134 +1370,14 @@ fi
 # 初始化 GitHub 仓库对照表（首次运行时创建）
 initialize_github_repo_map
 
-case "$1" in
-    --startup)
-        [ ! -f "$CONFIG_FILE" ] && {
-            mount_all_custom_fonts
-            exit 0
-        }
-        while IFS= read -r line; do
-            [[ -z "$line" ]] && continue
-            # 解析格式：app|method 或 app（旧格式）
-            app=""
-            if [[ "$line" == *"|"* ]]; then
-                app="${line%%|*}"
-            else
-                app="$line"
-            fi
-            if [ -n "$app" ]; then
-                if ! do_mount "$app" "true"; then
-                    echo "[WARN] Failed to mount fonts for: $app, skipping."
-                    echo "       跳过该应用的字体挂载。"
-                fi
-            fi
-        done < "$CONFIG_FILE"
-        # 也加载并挂载自定义字体配置
-        mount_all_custom_fonts
-        exit 0
-        ;;
-    -c|--custom)
-        check_root
-        if [ -z "$2" ]; then
-            echo "用法 / Usage: $0 -c <app_name>"
-            exit 1
-        fi
-        do_custom_fonts "$2"
-        exit 0
-        ;;
-    -l|--list)
-        list_mapped_apps
-        exit 0
-        ;;
-    -d|--detail)
-        list_mapped_apps_detail
-        exit 0
-        ;;
-    --unmount-all)
-        check_root
-        do_unmount_all
-        # 注意：此模式下我们选择保留配置文件，以便下次启动或手动执行 --startup 时恢复
-        # 如果你想卸载的同时清空配置，请使用下面的逻辑：
-        # rm -f "$CONFIG_FILE" 
-        exit 0
-        ;;
-    --remove-service)
-        check_root
-        # 1. 先执行全量卸载
-        do_unmount_all
-        # 2. 清理配置文件
-        rm -f "$CONFIG_FILE"
-        # 3. 停止并注销服务
-        remove_system_service
-        echo "[OK] Manager fully removed."
-        echo "     管理器已彻底卸载。"
-        exit 0
-        ;;
-    --uninstall)
-        check_root
-        do_uninstall
-        exit 0
-        ;;
-    --install-service)
-        check_root
-        setup_system_service
-        exit 0
-        ;;
-    -i|--init)
-        check_root
-        install_completion
-        exit 0
-        ;;
-esac
+# 处理系统级命令（直接 exit）
+# 包括：--startup, -c, -l, -d, --unmount-all, --remove-service, --uninstall, --install-service, -i
+if [[ $# -gt 0 ]]; then
+    handle_system_commands "$@"
+fi
 
-# 交互模式
+# 到此处说明是交互模式，需要 root 权限
 check_root
-COMMAND="mount"
-APP_NAME=""
 
-while [[ $# -gt 0 ]]; do
-  case $1 in
-        -u|--unmount) COMMAND="unmount"; APP_NAME="$2"; shift 2 ;;
-        -a|--app) APP_NAME="$2"; shift 2 ;;
-        -l|--list) COMMAND="list"; shift ;;
-        -d|--detail) COMMAND="detail"; shift ;;
-        *) APP_NAME="$1"; shift ;;
-  esac
-done
-
-if [ -z "$APP_NAME" ] && [[ "$COMMAND" != "list" && "$COMMAND" != "detail" ]]; then
-    echo "Usage:"
-    echo "  sudo $(basename "$0") -a <app_name>       Repair with Flutter Engine or fonts / 使用引擎修复或字体映射"
-    echo "  sudo $(basename "$0") -c <app_name>       Repair with custom fonts / 自定义字体修复"
-    echo "  sudo $(basename "$0") -u <app_name>       Unmount mappings / 卸载映射"
-    echo "  $(basename "$0") -l | --list              List mapped apps / 列出已映射应用"
-    echo "  $(basename "$0") -d | --detail            Detail mappings / 详细映射信息"
-    echo "  sudo $(basename "$0") --unmount-all       Unmount all / 卸载全部"
-    echo "  sudo $(basename "$0") --remove-service    Remove manager / 移除管理器"
-    echo "  sudo $(basename "$0") --uninstall         Uninstall completely / 完全卸载"
-    echo "  sudo $(basename "$0") --install-service   Install systemd service / 安装系统服务"
-    echo "  sudo $(basename "$0") -i | --init         Install completion / 安装补全"
-    echo ""
-    echo "Priority: Flutter Engine SO replacement > Font mapping workaround"
-    echo "优先级：Flutter 引擎 SO 替换 > 字体映射临时方案"
-    prompt_install_completion
-    exit 1
-fi
-
-if [[ "$COMMAND" == "mount" ]]; then
-    [ ! -f "$NOTO_REG" ] && apt update && apt install -y fonts-noto-cjk
-    if ! do_mount "$APP_NAME" "false"; then
-        echo "[ERROR] App not found or no target fonts: $APP_NAME"
-        echo "        未找到应用或未找到可替换字体。"
-        prompt_install_completion
-        exit 1
-    fi
-elif [[ "$COMMAND" == "list" ]]; then
-    list_mapped_apps
-    exit 0
-elif [[ "$COMMAND" == "detail" ]]; then
-    list_mapped_apps_detail
-    exit 0
-else
-    unmount_app "$APP_NAME"
-fi
+# 解析参数并执行应用级命令
+parse_and_execute_command "$@"
