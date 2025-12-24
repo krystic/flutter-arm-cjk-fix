@@ -130,6 +130,11 @@ jobs:
         echo "切换到修订 $REVISION (tag: ${{ steps.set-vars.outputs.flutter_version }})..."
         git checkout $REVISION
         
+        # 复制 gclient 配置文件
+        echo "配置 gclient..."
+        cp engine/src/flutter/DEPS DEPS
+        cp engine/src/flutter/tools/gn .gclient
+        
         echo "同步 DEPS 依赖..."
         # 设置 Git 配置避免警告
         export GIT_CONFIG_COUNT=1
