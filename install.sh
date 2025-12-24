@@ -87,8 +87,8 @@ init_so_dir() {
 
 install_completion() {
   log "安装 Bash 自动补全..."
-  # 使用主脚本的 -i 入口安装补全
-  "$TARGET_BIN" -i || true
+  # 使用主脚本的 --install-completion 安装补全
+  "$TARGET_BIN" --install-completion || true
 }
 
 install_service_via_script() {
