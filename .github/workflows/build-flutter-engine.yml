@@ -123,6 +123,15 @@ jobs:
         mkdir -p "$ENGINE_DIR"
         cd "$ENGINE_DIR"
         
+        # 先克隆 Flutter 主仓库到指定版本
+        echo "克隆 flutter/flutter 到修订 $REVISION..."
+        git clone --depth 1 --branch ${{ steps.set-vars.outputs.flutter_version }} https://github.com/flutter/flutter.git src/flutter || \
+          git clone https://github.com/flutter/flutter.git src/flutter
+        
+        cd src/flutter
+        git checkout $REVISION
+        cd ../..
+        
         # 创建 .gclient 配置
         cat > .gclient << '__EOF__'
         solutions = [
@@ -137,14 +146,13 @@ jobs:
         ]
         __EOF__
         
-        echo "同步代码到 Engine commit ${{ steps.detect-commit.outputs.engine_commit }}..."
+        echo "同步 DEPS 依赖..."
         # 设置 Git 配置避免警告
         export GIT_CONFIG_COUNT=1
         export GIT_CONFIG_KEY_0=protocol.file.allow
         export GIT_CONFIG_VALUE_0=always
         
-        echo "使用修订: $REVISION"
-        gclient sync --revision=$REVISION --verbose
+        gclient sync --verbose
         
         echo "✅ 源码同步完成"
         df -h
@@ -236,7 +244,7 @@ jobs:
     - name: Commit and push
       run: |
         VERSION="${{ steps.set-vars.outputs.flutter_version }}"
-        ENGINE_COMMIT="${{ steps.detect-commit.outputs.engine_commit }}"
+        FLUTTER_COMMIT="${{ steps.set-vars.outputs.flutter_commit }}"
         
         git config user.name "GitHub Actions Bot"
         git config user.email "actions@github.com"
@@ -244,7 +252,7 @@ jobs:
         git add lib/
         SIZE=$(du -h lib/libflutter_linux_gtk.so.$VERSION | cut -f1)
         git commit -m "chore: add Flutter Engine $VERSION with fontconfig support" \
-          -m "Built from flutter/engine@$ENGINE_COMMIT" \
+          -m "Built from flutter/flutter@${FLUTTER_COMMIT}" \
           -m "Added --enable-fontconfig flag" \
           -m "Linux ARM64 release build" \
           -m "Auto-built by GitHub Actions" \
