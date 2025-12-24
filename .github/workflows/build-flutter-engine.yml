@@ -132,8 +132,7 @@ jobs:
         
         # 复制 gclient 配置文件
         echo "配置 gclient..."
-        cp engine/src/flutter/DEPS DEPS
-        cp engine/src/flutter/tools/gn .gclient
+        cp engine/scripts/standard.gclient .gclient
         
         echo "同步 DEPS 依赖..."
         # 设置 Git 配置避免警告
