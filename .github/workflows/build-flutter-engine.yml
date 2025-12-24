@@ -11,10 +11,6 @@ on:
         description: 'Flutter repo commit SHA (optional; recommended)'
         required: false
         type: string
-      engine_commit:
-        description: 'Flutter Engine commit hash (optional, will auto-detect if not provided)'
-        required: false
-        type: string
   
   repository_dispatch:
     types: [build-flutter-engine]
@@ -36,11 +32,9 @@ jobs:
         if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
           echo "flutter_version=${{ github.event.client_payload.flutter_version }}" >> $GITHUB_OUTPUT
           echo "flutter_commit=${{ github.event.client_payload.flutter_commit }}" >> $GITHUB_OUTPUT
-          echo "engine_commit=${{ github.event.client_payload.engine_commit }}" >> $GITHUB_OUTPUT
         else
           echo "flutter_version=${{ inputs.flutter_version }}" >> $GITHUB_OUTPUT
           echo "flutter_commit=${{ inputs.flutter_commit }}" >> $GITHUB_OUTPUT
-          echo "engine_commit=${{ inputs.engine_commit }}" >> $GITHUB_OUTPUT
         fi
     
     - name: Checkout repository
@@ -95,35 +89,32 @@ jobs:
         echo "$DEPOT_TOOLS_DIR" >> $GITHUB_PATH
         echo "✅ depot_tools 已添加到 PATH"
     
-    - name: Detect Engine Commit if not provided
-      id: detect-commit
+    - name: Resolve Flutter revision
+      id: resolve-rev
       run: |
-        if [ -n "${{ steps.set-vars.outputs.engine_commit }}" ]; then
-          echo "使用提供的 Engine commit: ${{ steps.set-vars.outputs.engine_commit }}"
-          ENGINE_COMMIT="${{ steps.set-vars.outputs.engine_commit }}"
-        else
-          echo "自动检测 Engine commit（从 Flutter SDK ${{ steps.set-vars.outputs.flutter_version }}）..."
-          # 从 flutter/flutter 仓库的对应版本获取 engine.version
-          ENGINE_COMMIT=$(curl -sL "https://raw.githubusercontent.com/flutter/flutter/${{ steps.set-vars.outputs.flutter_version }}/bin/internal/engine.version" | tr -d '[:space:]')
-          
-          if [ -z "$ENGINE_COMMIT" ]; then
-            echo "❌ 无法检测 Engine commit"
-            exit 1
+        REVISION="${{ steps.set-vars.outputs.flutter_commit }}"
+        if [ -z "$REVISION" ] || [ "$REVISION" = "null" ]; then
+          echo "根据版本解析 Flutter 提交..."
+          REVISION=$(curl -s "https://api.github.com/repos/flutter/flutter/git/ref/tags/${{ steps.set-vars.outputs.flutter_version }}" | jq -r '.object.sha')
+          if [ -z "$REVISION" ] || [ "$REVISION" = "null" ]; then
+            REVISION=$(curl -s "https://api.github.com/repos/flutter/flutter/git/refs/tags/${{ steps.set-vars.outputs.flutter_version }}" | jq -r '.object.sha')
           fi
-          echo "检测到 Engine commit: $ENGINE_COMMIT"
         fi
-        
-        echo "engine_commit=$ENGINE_COMMIT" >> $GITHUB_OUTPUT
-        echo "ENGINE_COMMIT=$ENGINE_COMMIT" >> $GITHUB_ENV
+        if [ -z "$REVISION" ] || [ "$REVISION" = "null" ]; then
+          echo "❌ 无法解析 Flutter 提交"
+          exit 1
+        fi
+        echo "revision=$REVISION" >> $GITHUB_OUTPUT
+        echo "REVISION=$REVISION" >> $GITHUB_ENV
     
     - name: Cache Flutter Engine source
       id: cache-engine-src
       uses: actions/cache@v4
       with:
         path: ${{ env.ENGINE_DIR }}
-        key: flutter-engine-src-${{ steps.detect-commit.outputs.engine_commit }}-v1
+        key: flutter-engine-src-${{ steps.resolve-rev.outputs.revision }}-v1
         restore-keys: |
-          flutter-engine-src-${{ steps.detect-commit.outputs.engine_commit }}-
+          flutter-engine-src-${{ steps.resolve-rev.outputs.revision }}-
           flutter-engine-src-
     
     - name: Clone Flutter Engine
@@ -152,11 +143,6 @@ jobs:
         export GIT_CONFIG_KEY_0=protocol.file.allow
         export GIT_CONFIG_VALUE_0=always
         
-        # 优先使用 Flutter commit（如果提供），否则使用 Engine commit
-        REVISION="${{ steps.set-vars.outputs.flutter_commit }}"
-        if [ -z "$REVISION" ]; then
-          REVISION="${{ steps.detect-commit.outputs.engine_commit }}"
-        fi
         echo "使用修订: $REVISION"
         gclient sync --revision=$REVISION --verbose
         
@@ -229,7 +215,6 @@ jobs:
     - name: Update lib README
       run: |
         VERSION="${{ steps.set-vars.outputs.flutter_version }}"
-        ENGINE_COMMIT="${{ steps.detect-commit.outputs.engine_commit }}"
         FLUTTER_COMMIT="${{ steps.set-vars.outputs.flutter_commit }}"
         SIZE=$(du -h "lib/libflutter_linux_gtk.so.$VERSION" | cut -f1)
         
@@ -237,7 +222,6 @@ jobs:
 
         ## Flutter $VERSION
         - Flutter Commit: ${FLUTTER_COMMIT:-N/A}
-        - Engine Commit: $ENGINE_COMMIT
         - Built on: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
         - Size: $SIZE
         - Platform: Linux ARM64
@@ -280,7 +264,6 @@ jobs:
           
           **Flutter SDK Version**: ${{ steps.set-vars.outputs.flutter_version }}  
           **Flutter Commit**: ${{ steps.set-vars.outputs.flutter_commit }}  
-          **Engine Commit**: ${{ steps.detect-commit.outputs.engine_commit }}  
           **Platform**: Linux ARM64  
           **Build Type**: Release  
           **Special Features**: Compiled with `--enable-fontconfig` to fix CJK font rendering
@@ -306,7 +289,6 @@ jobs:
           - Root cause: Official Flutter Engine lacks fontconfig support on ARM64
           - Solution: This custom build with fontconfig enabled
           - Source: https://github.com/flutter/flutter/commit/${{ steps.set-vars.outputs.flutter_commit }}
-          - Engine commit reference: https://github.com/flutter/flutter/blob/${{ steps.set-vars.outputs.flutter_version }}/bin/internal/engine.version
           
           ---
           **Auto-built by GitHub Actions** on $(date -u '+%Y-%m-%d')

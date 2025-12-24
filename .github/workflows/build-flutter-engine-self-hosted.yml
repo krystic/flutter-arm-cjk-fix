@@ -26,7 +26,6 @@ jobs:
       build_needed: ${{ steps.check.outputs.build_needed }}
       version: ${{ steps.check.outputs.version }}
       flutter_commit: ${{ steps.check.outputs.flutter_commit }}
-      engine_commit: ${{ steps.check.outputs.engine_commit }}
     
     steps:
     - name: Checkout repository
@@ -57,9 +56,6 @@ jobs:
         fi
         echo "flutter_commit=$FLUTTER_COMMIT" >> $GITHUB_OUTPUT
 
-        # 获取 Engine commit（从 engine.version 文件）
-        ENGINE_COMMIT=$(curl -sL "https://raw.githubusercontent.com/flutter/flutter/$VERSION/bin/internal/engine.version" | tr -d '[:space:]')
-        echo "engine_commit=$ENGINE_COMMIT" >> $GITHUB_OUTPUT
         
         # 检查是否已存在
         SO_FILE="lib/libflutter_linux_gtk.so.$VERSION"
@@ -232,7 +228,6 @@ jobs:
       run: |
         VERSION="${{ needs.check-version.outputs.version }}"
         FLUTTER_COMMIT="${{ needs.check-version.outputs.flutter_commit }}"
-        ENGINE_COMMIT="${{ needs.check-version.outputs.engine_commit }}"
         SIZE=$(du -h "lib/libflutter_linux_gtk.so.$VERSION" | cut -f1)
         BUILD_HOST=$(hostname)
         BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
@@ -241,7 +236,6 @@ jobs:
 
         ## Flutter $VERSION
         - Flutter Commit: ${FLUTTER_COMMIT:-N/A}
-        - Engine Commit: ${ENGINE_COMMIT:-N/A}
         - Built on: $BUILD_TIME
         - Build host: $BUILD_HOST (Self-hosted ARM64 Runner)
         - Size: $SIZE
@@ -286,7 +280,6 @@ jobs:
           
           **Version**: ${{ needs.check-version.outputs.version }}  
           **Flutter Commit**: ${{ needs.check-version.outputs.flutter_commit }}  
-          **Engine Commit**: ${{ needs.check-version.outputs.engine_commit }}  
           **Platform**: Linux ARM64  
           **Build Type**: Release  
           **Build Environment**: Self-hosted ARM64 Runner  
@@ -324,7 +317,6 @@ jobs:
           ### 📚 Documentation
           - See [FONTCONFIG_BUG_INVESTIGATION.md](https://github.com/${{ github.repository }}/blob/main/FONTCONFIG_BUG_INVESTIGATION.md) for detailed analysis
           - Source: https://github.com/flutter/flutter/commit/${{ needs.check-version.outputs.flutter_commit }}
-          - Engine commit reference: https://github.com/flutter/flutter/blob/${{ needs.check-version.outputs.version }}/bin/internal/engine.version
           
           ---
           **Built on**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')  
