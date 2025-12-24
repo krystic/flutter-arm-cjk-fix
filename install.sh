@@ -85,11 +85,6 @@ init_so_dir() {
   fi
 }
 
-install_completion() {
-  log "安装 Bash 自动补全..."
-  # 使用主脚本的 --install-completion 安装补全
-  "$TARGET_BIN" --install-completion || true
-}
 
 install_service_via_script() {
   log "调用主脚本安装 systemd 服务..."
@@ -107,6 +102,7 @@ print_summary() {
   echo "  sudo flutter-font-fix -a <app_name>    # 优先使用 SO 根因修复，回退到字体映射"
   echo "  sudo flutter-font-fix -d               # 查看修复方式与状态 (SO/font/unknown)"
   echo "  sudo systemctl start flutter-font-fix  # 按配置启动（如已配置应用）"
+  echo "  sudo flutter-font-fix -i | --install-completion  # 安装 Shell 自动补全"
   echo
   echo "架构提示：非 ARM64 Linux 无需安装，此脚本仅用于修复 ARM64 平台上的 Flutter 引擎字体回退问题。"
 }
