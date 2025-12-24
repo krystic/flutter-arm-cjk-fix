@@ -425,32 +425,38 @@ do_uninstall() {
     
     # 1. 卸载所有挂载和映射
     echo "[*] Unmounting all replacements..."
+    echo "    卸载所有挂载和映射..."
     do_unmount_all >/dev/null 2>&1 || true
     
     # 2. 删除 SO 库目录
     if [ -d "$SO_LIB_DIR" ]; then
         echo "[*] Removing SO library directory: $SO_LIB_DIR"
+        echo "    删除 SO 库目录: $SO_LIB_DIR"
         rm -rf "$SO_LIB_DIR"
     fi
     
     # 3. 删除配置目录
     if [ -d "$CONFIG_DIR" ]; then
         echo "[*] Removing config directory: $CONFIG_DIR"
+        echo "    删除配置目录: $CONFIG_DIR"
         rm -rf "$CONFIG_DIR"
     fi
     
     # 4. 删除 bash completion 文件
     if [ -f "/etc/bash_completion.d/flutter-font-fix" ]; then
         echo "[*] Removing bash completion: /etc/bash_completion.d/flutter-font-fix"
+        echo "    删除 bash 补全文件: /etc/bash_completion.d/flutter-font-fix"
         rm -f "/etc/bash_completion.d/flutter-font-fix"
     fi
     
     # 5. 停止并删除 systemd 服务
     echo "[*] Removing systemd service"
+    echo "    删除 systemd 服务"
     remove_system_service
     
     # 6. 删除脚本本身
     echo "[*] Removing script: $SCRIPT_PATH"
+    echo "    删除脚本: $SCRIPT_PATH"
     rm -f "$SCRIPT_PATH"
     
     echo "[OK] flutter-font-fix uninstalled completely."
