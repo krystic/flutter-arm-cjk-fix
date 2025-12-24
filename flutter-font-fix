@@ -1413,7 +1413,7 @@ parse_global_params() {
 }
 
 # 检查并自动安装补全（非 --startup 和 --install-completion 命令时执行）
-if [[ "${1:-}" != "--startup" && "${1:-}" != "-i" && "${1:-}" != "--install-completion" && "${1:-}" != "--cdn" ]]; then
+if [[ "${1:-}" != "--startup" && "${1:-}" != "-i" && "${1:-}" != "--install-completion" ]]; then
     auto_install_completion
 fi
 
