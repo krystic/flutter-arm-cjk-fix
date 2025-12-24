@@ -395,8 +395,8 @@ RemainAfterExit=yes
 [Install]
 WantedBy=multi-user.target
 EOF
-        systemctl daemon-reload
-        systemctl enable flutter-font-fix.service
+        systemctl daemon-reload 2>/dev/null
+        systemctl enable flutter-font-fix.service 2>/dev/null
         echo "[OK] Systemd service enabled."
         echo "     系统服务已启用。"
     fi
@@ -404,8 +404,9 @@ EOF
 
 do_unmount_all() {
     echo ""
-    echo "[INFO] Unmounting all font mappings..."
-    echo "       正在卸载所有字体映射..."
+    echo "[INFO] Unmounting all SO replacements and font mappings..."
+    echo "       正在卸载所有 SO 替换和字体映射..."
+    
     if [ -f "$CONFIG_FILE" ]; then
         local apps=()
         while IFS= read -r line; do
@@ -420,6 +421,10 @@ do_unmount_all() {
         done < "$CONFIG_FILE"
         
         for app in "${apps[@]}"; do
+            # 卸载 SO 替换（如有）
+            unmount_so_replacement "$app" 2>/dev/null || true
+            
+            # 卸载字体映射
             local SNAP_PATH="/snap/$app/current/"
             local TARGET_DIR=$(find -L "$SNAP_PATH" -name "Ubuntu-R.ttf" -printf '%h\n' 2>/dev/null | head -n 1)
             if [ -n "$TARGET_DIR" ]; then
