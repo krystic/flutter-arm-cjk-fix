@@ -4,7 +4,7 @@ set -euo pipefail
 # flutter-arm-cjk-fix installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/krystic/flutter-arm-cjk-fix/main/install.sh | sudo bash
 
-REPO_RAW="https://raw.githubusercontent.com/krystic/flutter-arm-cjk-fix/main"
+REPO_RAW="https://raw.githubusercontent.com/krystic/flutter-arm-cjk-fix/feature/so-libdir-and-auto-download"
 TARGET_BIN="/usr/local/bin/flutter-font-fix"
 CONFIG_DIR="/etc/flutter-cjk"
 SERVICE_FILE="/etc/systemd/system/flutter-font-fix.service"
