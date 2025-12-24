@@ -7,6 +7,10 @@ on:
         description: 'Flutter version to build (e.g., 3.24.3)'
         required: true
         type: string
+      flutter_commit:
+        description: 'Flutter repo commit SHA (optional)'
+        required: false
+        type: string
   schedule:
     # 每天 UTC 2:00 检查并构建（北京时间 10:00）
     - cron: '0 2 * * *'
@@ -21,6 +25,8 @@ jobs:
     outputs:
       build_needed: ${{ steps.check.outputs.build_needed }}
       version: ${{ steps.check.outputs.version }}
+      flutter_commit: ${{ steps.check.outputs.flutter_commit }}
+      engine_commit: ${{ steps.check.outputs.engine_commit }}
     
     steps:
     - name: Checkout repository
@@ -39,6 +45,21 @@ jobs:
         
         echo "Checking version: $VERSION"
         echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+        # 获取 Flutter commit（tags/<version> 的对象 SHA）
+        if [ -n "${{ inputs.flutter_commit }}" ]; then
+          FLUTTER_COMMIT="${{ inputs.flutter_commit }}"
+        else
+          FLUTTER_COMMIT=$(curl -s "https://api.github.com/repos/flutter/flutter/git/ref/tags/$VERSION" | jq -r '.object.sha')
+          if [ -z "$FLUTTER_COMMIT" ] || [ "$FLUTTER_COMMIT" = "null" ]; then
+            FLUTTER_COMMIT=$(curl -s "https://api.github.com/repos/flutter/flutter/git/refs/tags/$VERSION" | jq -r '.object.sha')
+          fi
+        fi
+        echo "flutter_commit=$FLUTTER_COMMIT" >> $GITHUB_OUTPUT
+
+        # 获取 Engine commit（从 engine.version 文件）
+        ENGINE_COMMIT=$(curl -sL "https://raw.githubusercontent.com/flutter/flutter/$VERSION/bin/internal/engine.version" | tr -d '[:space:]')
+        echo "engine_commit=$ENGINE_COMMIT" >> $GITHUB_OUTPUT
         
         # 检查是否已存在
         SO_FILE="lib/libflutter_linux_gtk.so.$VERSION"
@@ -118,7 +139,7 @@ jobs:
           {
             "managed": False,
             "name": "src/flutter",
-            "url": "https://github.com/flutter/engine.git",
+            "url": "https://github.com/flutter/flutter.git",
             "custom_deps": {},
             "deps_file": "DEPS",
             "safesync_url": "",
@@ -131,7 +152,12 @@ jobs:
     - name: Sync Flutter Engine source
       run: |
         VERSION="${{ needs.check-version.outputs.version }}"
-        echo "同步 Flutter Engine 源码到版本 $VERSION..."
+        FLUTTER_COMMIT="${{ needs.check-version.outputs.flutter_commit }}"
+        REVISION="$FLUTTER_COMMIT"
+        if [ -z "$REVISION" ]; then
+          REVISION="$VERSION"
+        fi
+        echo "同步 Flutter 源码到修订 $REVISION..."
         cd "$ENGINE_DIR"
         
         # 设置 Git 配置
@@ -139,8 +165,8 @@ jobs:
         export GIT_CONFIG_KEY_0=protocol.file.allow
         export GIT_CONFIG_VALUE_0=always
         
-        # 同步到指定版本
-        gclient sync --revision="$VERSION" --verbose
+        # 同步到指定修订（优先使用 commit，其次 tag 版本）
+        gclient sync --revision="$REVISION" --verbose
         
         echo "✅ 源码同步完成"
     
@@ -205,6 +231,8 @@ jobs:
     - name: Update documentation
       run: |
         VERSION="${{ needs.check-version.outputs.version }}"
+        FLUTTER_COMMIT="${{ needs.check-version.outputs.flutter_commit }}"
+        ENGINE_COMMIT="${{ needs.check-version.outputs.engine_commit }}"
         SIZE=$(du -h "lib/libflutter_linux_gtk.so.$VERSION" | cut -f1)
         BUILD_HOST=$(hostname)
         BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
@@ -212,6 +240,8 @@ jobs:
         cat >> lib/README.md << '__EOF__'
 
         ## Flutter $VERSION
+        - Flutter Commit: ${FLUTTER_COMMIT:-N/A}
+        - Engine Commit: ${ENGINE_COMMIT:-N/A}
         - Built on: $BUILD_TIME
         - Build host: $BUILD_HOST (Self-hosted ARM64 Runner)
         - Size: $SIZE
@@ -255,6 +285,8 @@ jobs:
           ## 🚀 Flutter Engine with Fontconfig Support
           
           **Version**: ${{ needs.check-version.outputs.version }}  
+          **Flutter Commit**: ${{ needs.check-version.outputs.flutter_commit }}  
+          **Engine Commit**: ${{ needs.check-version.outputs.engine_commit }}  
           **Platform**: Linux ARM64  
           **Build Type**: Release  
           **Build Environment**: Self-hosted ARM64 Runner  
@@ -291,6 +323,8 @@ jobs:
           
           ### 📚 Documentation
           - See [FONTCONFIG_BUG_INVESTIGATION.md](https://github.com/${{ github.repository }}/blob/main/FONTCONFIG_BUG_INVESTIGATION.md) for detailed analysis
+          - Source: https://github.com/flutter/flutter/commit/${{ needs.check-version.outputs.flutter_commit }}
+          - Engine commit reference: https://github.com/flutter/flutter/blob/${{ needs.check-version.outputs.version }}/bin/internal/engine.version
           
           ---
           **Built on**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')  
