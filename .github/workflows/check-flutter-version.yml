@@ -19,30 +19,56 @@ jobs:
     - name: Check Flutter latest engine version from source
       id: check
       run: |
-        echo "正在检查 Flutter Engine 最新版本（从源码仓库）..."
+        echo "正在检查 Flutter Engine 最新版本（从 Git tags）..."
         
-        # 从 flutter/flutter 的 stable 分支获取 engine.version
-        # 这个文件包含了对应的 Engine commit hash
-        ENGINE_VERSION=$(curl -sL https://raw.githubusercontent.com/flutter/flutter/stable/bin/internal/engine.version)
+        # 方法1: 从 GitHub API 获取最新的 stable tag
+        echo "尝试从 GitHub API 获取最新 tag..."
+        LATEST_TAG=$(curl -sL https://api.github.com/repos/flutter/flutter/tags | \
+          jq -r '.[].name' | \
+          grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | \
+          sort -V | \
+          tail -n1)
         
-        # 获取 Flutter SDK 版本（用于标识）
-        FLUTTER_VERSION=$(curl -sL https://raw.githubusercontent.com/flutter/flutter/stable/version)
+        if [ -z "$LATEST_TAG" ]; then
+          echo "❌ 无法从 API 获取 tag，尝试备用方法..."
+          # 方法2: 从 Git 仓库直接获取 tags（备用）
+          LATEST_TAG=$(git ls-remote --tags https://github.com/flutter/flutter.git | \
+            grep -o 'refs/tags/[0-9]*\.[0-9]*\.[0-9]*$' | \
+            sed 's|refs/tags/||' | \
+            sort -V | \
+            tail -n1)
+        fi
+        
+        if [ -z "$LATEST_TAG" ]; then
+          echo "❌ 无法获取 Flutter 版本"
+          exit 1
+        fi
+        
+        echo "最新 Flutter 版本: $LATEST_TAG"
+        FLUTTER_VERSION="$LATEST_TAG"
+        
+        # 基于这个 tag 获取对应的 Engine commit
+        echo "获取 Engine commit (从 tag $LATEST_TAG)..."
+        ENGINE_COMMIT=$(curl -sL "https://raw.githubusercontent.com/flutter/flutter/$LATEST_TAG/bin/internal/engine.version" | tr -d '[:space:]')
+        
+        if [ -z "$ENGINE_COMMIT" ]; then
+          echo "❌ 无法获取 Engine commit"
+          exit 1
+        fi
         
         echo "Flutter SDK version: $FLUTTER_VERSION"
-        echo "Engine commit: $ENGINE_VERSION"
+        echo "Engine commit: $ENGINE_COMMIT"
         
-        # 使用 Flutter SDK 版本作为标识
-        LATEST_VERSION="$FLUTTER_VERSION"
-        echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
-        echo "engine_commit=$ENGINE_VERSION" >> $GITHUB_OUTPUT
+        echo "latest_version=$FLUTTER_VERSION" >> $GITHUB_OUTPUT
+        echo "engine_commit=$ENGINE_COMMIT" >> $GITHUB_OUTPUT
         
         # 检查是否已存在该版本的 SO 文件
-        SO_FILE="lib/libflutter_linux_gtk.so.$LATEST_VERSION"
+        SO_FILE="lib/libflutter_linux_gtk.so.$FLUTTER_VERSION"
         if [ -f "$SO_FILE" ]; then
-          echo "✅ Version $LATEST_VERSION already exists (Engine: $ENGINE_VERSION)"
+          echo "✅ Version $FLUTTER_VERSION already exists (Engine: $ENGINE_COMMIT)"
           echo "build_needed=false" >> $GITHUB_OUTPUT
         else
-          echo "🆕 New version detected: $LATEST_VERSION (Engine: $ENGINE_VERSION)"
+          echo "🆕 New version detected: $FLUTTER_VERSION (Engine: $ENGINE_COMMIT)"
           echo "build_needed=true" >> $GITHUB_OUTPUT
         fi
     
