@@ -14,7 +14,10 @@ SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 SO_LIB_DIR="/usr/local/lib/flutter-cjk"
 GITHUB_REPO_MAP="$CONFIG_DIR/github-repos.conf"
 FLUTTER_VERSION_CACHE="$CONFIG_DIR/flutter-versions.cache"
-GITHUB_RAW_BASE="https://raw.githubusercontent.com/krystic/flutter-arm-cjk-fix/feature/so-libdir-and-auto-download/lib"
+
+# GitHub Raw CDN 前缀（可通过 --cdn 参数覆盖）
+RAW_CDN_PREFIX="https://raw.githubusercontent.com/"
+GITHUB_RAW_BASE="${RAW_CDN_PREFIX}krystic/flutter-arm-cjk-fix/feature/so-libdir-and-auto-download/lib"
 
 NOTO_DIR="/usr/share/fonts/opentype/noto"
 NOTO_REG="$NOTO_DIR/NotoSansCJK-Regular.ttc"
@@ -106,7 +109,7 @@ get_flutter_version_from_fvmrc() {
     repo_path=${repo_path#http://github.com/}
     repo_path=${repo_path%.git}
 
-    local raw_base="https://raw.githubusercontent.com/$repo_path/$commit"
+    local raw_base="${RAW_CDN_PREFIX}${repo_path}/${commit}"
 
     # 尝试 .fvmrc
     local fvmrc_url="$raw_base/.fvmrc"
@@ -1310,6 +1313,17 @@ handle_system_commands() {
             install_completion
             exit 0
             ;;
+        --cdn)
+            if [[ -z "$2" ]]; then
+                echo "Usage: $(basename "$0") --cdn <cdn_prefix>"
+                echo "       Example: $(basename "$0") --cdn https://ghproxy.com/https://raw.githubusercontent.com/"
+                exit 1
+            fi
+            RAW_CDN_PREFIX="$2"
+            GITHUB_RAW_BASE="${RAW_CDN_PREFIX}krystic/flutter-arm-cjk-fix/feature/so-libdir-and-auto-download/lib"
+            echo "[INFO] CDN prefix set to: $RAW_CDN_PREFIX"
+            exit 0
+            ;;
     esac
 }
 
@@ -1336,10 +1350,15 @@ parse_and_execute_command() {
         echo "  $(basename "$0") -l | --list              List mapped apps / 列出已映射应用"
         echo "  $(basename "$0") -d | --detail            Detail mappings / 详细映射信息"
         echo "  sudo $(basename "$0") --remove-all        Remove all / 移除全部"
+        echo ""
+        echo "  sudo $(basename "$0") -i | --install-completion  Install completion / 安装补全"
+        echo "  sudo $(basename "$0") --install-service   Install systemd service / 安装系统服务"
+        echo ""
         echo "  sudo $(basename "$0") --uninstall-service Uninstall systemd service / 卸载系统服务"
         echo "  sudo $(basename "$0") --uninstall         Uninstall completely / 完全卸载"
-        echo "  sudo $(basename "$0") --install-service   Install systemd service / 安装系统服务"
-        echo "  sudo $(basename "$0") -i | --install-completion  Install completion / 安装补全"
+        echo ""
+        echo "  $(basename "$0") --cdn <prefix>          Override GitHub Raw CDN prefix / 覆盖 GitHub Raw CDN 前缀"
+        echo "                                            Default: https://raw.githubusercontent.com/"
         echo ""
         echo "Priority: Flutter Engine SO replacement > Font mapping workaround"
         echo "优先级：Flutter 引擎 SO 替换 > 字体映射临时方案"
