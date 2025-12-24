@@ -244,9 +244,13 @@ download_so_file_if_needed() {
     local github_so_url="$GITHUB_RAW_BASE/libflutter_linux_gtk.so.$flutter_version"
     if curl -sfI "$github_so_url" >/dev/null 2>&1; then
         mkdir -p "$SO_LIB_DIR"
-        if curl -fSL "$github_so_url" -o "$so_file" 2>/dev/null; then
+        echo "[INFO] Downloading from GitHub..."
+        echo "       正在从 GitHub 下载..."
+        if curl -L "$github_so_url" -o "$so_file" 2>&1 | grep -i 'saved\|100'; then
+            chmod +x "$so_file"
+            local size=$(du -h "$so_file" | cut -f1)
             echo "[OK] Downloaded: $(basename "$so_file")"
-            echo "     下载完成: $(du -h "$so_file" | cut -f1)"
+            echo "     下载完成: $size"
             echo "$so_file"
             return 0
         else
@@ -276,15 +280,21 @@ mount_so_replacement() {
     local snap_path="/snap/$app/current"
     [[ ! -d "$snap_path" ]] && return 1
     
+    # 确保 SO 文件有执行权限
+    [[ -f "$so_file" ]] && chmod +x "$so_file" 2>/dev/null || true
+    
     # 查找应用中的 libflutter_linux_gtk.so
     local target_so=$(find -L "$snap_path" -name "libflutter_linux_gtk.so*" | head -n1)
-    [[ -z "$target_so" ]] && return 1
+    [[ -z "$target_so" ]] && {
+        echo "[ERROR] libflutter_linux_gtk.so not found in app: $app"
+        return 1
+    }
     
     echo ""
     echo "[INFO] Mounting Flutter Engine replacement..."
     echo "       正在挂载 Flutter 引擎替换文件..."
-    echo "       Source: $(basename "$so_file")"
-    echo "       Target: $(basename "$target_so")"
+    echo "       Source: $(basename "$so_file") (size: $(du -h "$so_file" | cut -f1))"
+    echo "       Target: $target_so"
     
     # 先卸载可能存在的映射
     umount -l "$target_so" 2>/dev/null || true
