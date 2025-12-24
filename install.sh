@@ -9,7 +9,7 @@ TARGET_BIN="/usr/local/bin/flutter-font-fix"
 CONFIG_DIR="/etc/flutter-cjk"
 SERVICE_FILE="/etc/systemd/system/flutter-font-fix.service"
 
-log() { printf "[install] %s\n" "$*"; }
+log() { printf "[INST] %s\n" "$*"; }
 warn() { printf "[warn] %s\n" "$*"; }
 err() { printf "[error] %s\n" "$*"; }
 
