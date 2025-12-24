@@ -408,6 +408,15 @@ EOF
     fi
 }
 
+# 删除 systemd 服务
+remove_system_service() {
+    if [ -f "$SERVICE_FILE" ]; then
+        systemctl disable --now flutter-font-fix.service 2>/dev/null || true
+        rm -f "$SERVICE_FILE"
+        systemctl daemon-reload 2>/dev/null || true
+    fi
+}
+
 do_unmount_all() {
     echo ""
     echo "[INFO] Unmounting all SO replacements and font mappings..."
@@ -1247,11 +1256,7 @@ case "$1" in
         # 2. 清理配置文件
         rm -f "$CONFIG_FILE"
         # 3. 停止并注销服务
-        if [ -f "$SERVICE_FILE" ]; then
-            systemctl disable --now flutter-font-fix.service 2>/dev/null
-            rm -f "$SERVICE_FILE"
-            systemctl daemon-reload
-        fi
+        remove_system_service
         echo "[OK] Manager fully removed."
         echo "     管理器已彻底卸载。"
         exit 0
@@ -1285,12 +1290,8 @@ case "$1" in
         fi
         
         # 5. 停止并删除 systemd 服务
-        if [ -f "$SERVICE_FILE" ]; then
-            echo "[*] Removing systemd service"
-            systemctl disable --now flutter-font-fix.service 2>/dev/null || true
-            rm -f "$SERVICE_FILE"
-            systemctl daemon-reload 2>/dev/null || true
-        fi
+        echo "[*] Removing systemd service"
+        remove_system_service
         
         # 6. 删除脚本本身
         echo "[*] Removing script: $SCRIPT_PATH"
