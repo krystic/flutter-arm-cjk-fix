@@ -1313,25 +1313,10 @@ handle_system_commands() {
             install_completion
             exit 0
             ;;
-        --cdn)
-            if [[ -z "$2" ]]; then
-                echo "Usage: $(basename "$0") --cdn <cdn_prefix>"
-                echo ""
-                echo "Override the default GitHub Raw CDN prefix (default: https://raw.githubusercontent.com/)"
-                echo "覆盖默认的 GitHub Raw CDN 前缀 (默认: https://raw.githubusercontent.com/)"
-                echo ""
-                echo "Examples (需要末尾包含斜杠):"
-                echo "  $(basename "$0") --cdn https://raw.staticdn.net/"
-                echo "  $(basename "$0") --cdn https://ghproxy.com/https://raw.githubusercontent.com/"
-                exit 1
-            fi
-            RAW_CDN_PREFIX="$2"
-            GITHUB_RAW_BASE="${RAW_CDN_PREFIX}krystic/flutter-arm-cjk-fix/feature/so-libdir-and-auto-download/lib"
-            echo "[OK] CDN prefix set to: $RAW_CDN_PREFIX"
-            exit 0
-            ;;
     esac
 }
+
+# 解析全局参数（如 --cdn）
 
 # 解析参数并执行应用级命令
 parse_and_execute_command() {
@@ -1363,10 +1348,13 @@ parse_and_execute_command() {
         echo "  sudo $(basename "$0") --uninstall-service Uninstall systemd service / 卸载系统服务"
         echo "  sudo $(basename "$0") --uninstall         Uninstall completely / 完全卸载"
         echo ""
-        echo "Advanced options / 高级选项:"
-        echo "  $(basename "$0") --cdn <prefix>          Override GitHub Raw CDN prefix (requires trailing slash)"
-        echo "                                            覆盖 GitHub Raw CDN 前缀（需末尾斜杠）"
-        echo "                                            Examples: https://raw.staticdn.net/ | https://ghproxy.com/https://raw.githubusercontent.com/"
+        echo "Global options / 全局参数:"
+        echo "  --cdn <prefix>                         Override GitHub Raw CDN prefix (with trailing slash)"
+        echo "                                         覆盖 GitHub Raw CDN 前缀(需末尾斜杠)"
+        echo ""
+        echo "Examples:"
+        echo "  $(basename "$0") --cdn https://raw.staticdn.net/ -a snap-store"
+        echo "  $(basename "$0") --cdn https://ghproxy.com/https://raw.githubusercontent.com/ -a snap-store"
         echo ""
         echo "Priority: Flutter Engine SO replacement > Font mapping workaround"
         echo "优先级：Flutter 引擎 SO 替换 > 字体映射临时方案"
@@ -1395,13 +1383,45 @@ parse_and_execute_command() {
 
 # --- 主入口 ---
 
+# 先从参数中提取 --cdn 全局参数
+parse_global_params() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --cdn)
+                if [[ -z "$2" ]]; then
+                    echo "[ERROR] --cdn requires a prefix argument"
+                    echo "        --cdn 需要一个前缀参数"
+                    echo ""
+                    echo "Usage: $(basename "$0") --cdn <prefix> <command> [args]"
+                    echo "Examples:"
+                    echo "  $(basename "$0") --cdn https://raw.staticdn.net/ -a snap-store"
+                    echo "  $(basename "$0") --cdn https://ghproxy.com/https://raw.githubusercontent.com/ -a snap-store"
+                    exit 1
+                fi
+                RAW_CDN_PREFIX="$2"
+                GITHUB_RAW_BASE="${RAW_CDN_PREFIX}krystic/flutter-arm-cjk-fix/feature/so-libdir-and-auto-download/lib"
+                shift 2
+                ;;
+            *)
+                # 不是全局参数，会退出并返回剩余的参数
+                break
+                ;;
+        esac
+    done
+    # 返回剩余的参数
+    "$@"
+}
+
 # 检查并自动安装补全（非 --startup 和 --install-completion 命令时执行）
-if [[ "$1" != "--startup" && "$1" != "-i" && "$1" != "--install-completion" ]]; then
+if [[ "${1:-}" != "--startup" && "${1:-}" != "-i" && "${1:-}" != "--install-completion" && "${1:-}" != "--cdn" ]]; then
     auto_install_completion
 fi
 
 # 初始化 GitHub 仓库对照表（首次运行时创建）
 initialize_github_repo_map
+
+# 先解析全局参数（--cdn 等），然后处理剩余的命令
+eval "set -- $(parse_global_params "$@")" || exit $?
 
 # 处理系统级命令（直接 exit）
 # 包括：--startup, -c, -l, -d, --remove-all, --uninstall-service, --uninstall, --install-service, -i
