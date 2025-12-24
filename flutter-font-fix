@@ -100,25 +100,32 @@ get_commit_id() {
 get_flutter_version_from_fvmrc() {
     local repo=$1
     local commit=$2
-    
+
+    # 规范化仓库路径为 owner/repo 形式
+    local repo_path=${repo#https://github.com/}
+    repo_path=${repo_path#http://github.com/}
+    repo_path=${repo_path%.git}
+
+    local raw_base="https://raw.githubusercontent.com/$repo_path/$commit"
+
     # 尝试 .fvmrc
-    local fvmrc_url="${repo}/raw/${commit}/.fvmrc"
+    local fvmrc_url="$raw_base/.fvmrc"
     local flutter_version=$(curl -sL "$fvmrc_url" 2>/dev/null | grep -oP '"flutter"\s*:\s*"\K[0-9.]+')
-    
+
     if [[ -n "$flutter_version" ]]; then
         echo "$flutter_version"
         return 0
     fi
-    
+
     # 尝试 .fvm/fvm_config.json
-    local fvm_config_url="${repo}/raw/${commit}/.fvm/fvm_config.json"
+    local fvm_config_url="$raw_base/.fvm/fvm_config.json"
     flutter_version=$(curl -sL "$fvm_config_url" 2>/dev/null | grep -oP '"flutterSdkVersion"\s*:\s*"\K[0-9.]+')
-    
+
     if [[ -n "$flutter_version" ]]; then
         echo "$flutter_version"
         return 0
     fi
-    
+
     return 1
 }
 
