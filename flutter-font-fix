@@ -459,8 +459,8 @@ do_uninstall() {
 
 do_unmount_all() {
     echo ""
-    echo "[INFO] Unmounting all SO replacements and font mappings..."
-    echo "       正在卸载所有 SO 替换和字体映射..."
+    echo "[INFO] Removing all SO replacements and font mappings..."
+    echo "       正在移除所有 SO 替换和字体映射..."
     
     if [ -f "$CONFIG_FILE" ]; then
         local apps=()
@@ -486,8 +486,8 @@ do_unmount_all() {
                 for f in "$TARGET_DIR"/Ubuntu-*.ttf; do
                     umount -l "$f" 2>/dev/null
                 done
-                echo "[OK] [$app] Unmounted."
-                echo "     映射已释放。"
+                echo "[OK] [$app] Removed."
+                echo "     映射已移除。"
             fi
         done
     else
@@ -1275,7 +1275,7 @@ handle_system_commands() {
             list_mapped_apps_detail
             exit 0
             ;;
-        --unmount-all)
+        --remove-all)
             check_root
             do_unmount_all
             exit 0
@@ -1329,7 +1329,7 @@ parse_and_execute_command() {
         echo "  sudo $(basename "$0") -r <app_name>       Remove/unmount mappings / 移除/卸载映射"
         echo "  $(basename "$0") -l | --list              List mapped apps / 列出已映射应用"
         echo "  $(basename "$0") -d | --detail            Detail mappings / 详细映射信息"
-        echo "  sudo $(basename "$0") --unmount-all       Unmount all / 卸载全部"
+        echo "  sudo $(basename "$0") --remove-all        Remove all / 移除全部"
         echo "  sudo $(basename "$0") --remove-service    Remove manager / 移除管理器"
         echo "  sudo $(basename "$0") --uninstall         Uninstall completely / 完全卸载"
         echo "  sudo $(basename "$0") --install-service   Install systemd service / 安装系统服务"
@@ -1371,7 +1371,7 @@ fi
 initialize_github_repo_map
 
 # 处理系统级命令（直接 exit）
-# 包括：--startup, -c, -l, -d, --unmount-all, --remove-service, --uninstall, --install-service, -i
+# 包括：--startup, -c, -l, -d, --remove-all, --remove-service, --uninstall, --install-service, -i
 if [[ $# -gt 0 ]]; then
     handle_system_commands "$@"
 fi
