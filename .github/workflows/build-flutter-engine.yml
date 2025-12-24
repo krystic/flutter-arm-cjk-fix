@@ -3,9 +3,13 @@ name: Build Flutter Engine (with Cache)
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Flutter version to build (e.g., 3.24.3)'
+      flutter_version:
+        description: 'Flutter SDK version (e.g., 3.24.3)'
         required: true
+        type: string
+      engine_commit:
+        description: 'Flutter Engine commit hash (optional, will auto-detect if not provided)'
+        required: false
         type: string
 
 env:
@@ -70,14 +74,35 @@ jobs:
         echo "$DEPOT_TOOLS_DIR" >> $GITHUB_PATH
         echo "✅ depot_tools 已添加到 PATH"
     
+    - name: Detect Engine Commit if not provided
+      id: detect-commit
+      run: |
+        if [ -n "${{ inputs.engine_commit }}" ]; then
+          echo "使用提供的 Engine commit: ${{ inputs.engine_commit }}"
+          ENGINE_COMMIT="${{ inputs.engine_commit }}"
+        else
+          echo "自动检测 Engine commit（从 Flutter SDK ${{ inputs.flutter_version }}）..."
+          # 从 flutter/flutter 仓库的对应版本获取 engine.version
+          ENGINE_COMMIT=$(curl -sL "https://raw.githubusercontent.com/flutter/flutter/${{ inputs.flutter_version }}/bin/internal/engine.version" | tr -d '[:space:]')
+          
+          if [ -z "$ENGINE_COMMIT" ]; then
+            echo "❌ 无法检测 Engine commit"
+            exit 1
+          fi
+          echo "检测到 Engine commit: $ENGINE_COMMIT"
+        fi
+        
+        echo "engine_commit=$ENGINE_COMMIT" >> $GITHUB_OUTPUT
+        echo "ENGINE_COMMIT=$ENGINE_COMMIT" >> $GITHUB_ENV
+    
     - name: Cache Flutter Engine source
       id: cache-engine-src
       uses: actions/cache@v4
       with:
         path: ${{ env.ENGINE_DIR }}
-        key: flutter-engine-src-${{ inputs.version }}-v1
+        key: flutter-engine-src-${{ steps.detect-commit.outputs.engine_commit }}-v1
         restore-keys: |
-          flutter-engine-src-${{ inputs.version }}-
+          flutter-engine-src-${{ steps.detect-commit.outputs.engine_commit }}-
           flutter-engine-src-
     
     - name: Clone Flutter Engine
@@ -100,14 +125,14 @@ jobs:
         ]
         __EOF__
         
-        echo "同步代码到版本 ${{ inputs.version }}..."
+        echo "同步代码到 Engine commit ${{ steps.detect-commit.outputs.engine_commit }}..."
         # 设置 Git 配置避免警告
         export GIT_CONFIG_COUNT=1
         export GIT_CONFIG_KEY_0=protocol.file.allow
         export GIT_CONFIG_VALUE_0=always
         
-        # 同步代码
-        gclient sync --revision=${{ inputs.version }} --verbose
+        # 同步代码（使用 engine commit hash）
+        gclient sync --revision=${{ steps.detect-commit.outputs.engine_commit }} --verbose
         
         echo "✅ 源码同步完成"
         df -h
@@ -177,12 +202,14 @@ jobs:
     
     - name: Update lib README
       run: |
-        VERSION="${{ inputs.version }}"
+        VERSION="${{ inputs.flutter_version }}"
+        ENGINE_COMMIT="${{ steps.detect-commit.outputs.engine_commit }}"
         SIZE=$(du -h "lib/libflutter_linux_gtk.so.$VERSION" | cut -f1)
         
-        cat >> lib/README.md << '__EOF__'
+        cat >> lib/README.md << __EOF__
 
         ## Flutter $VERSION
+        - Engine Commit: $ENGINE_COMMIT
         - Built on: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
         - Size: $SIZE
         - Platform: Linux ARM64
@@ -196,7 +223,8 @@ jobs:
     
     - name: Commit and push
       run: |
-        VERSION="${{ inputs.version }}"
+        VERSION="${{ inputs.flutter_version }}"
+        ENGINE_COMMIT="${{ steps.detect-commit.outputs.engine_commit }}"
         
         git config user.name "GitHub Actions Bot"
         git config user.email "actions@github.com"
@@ -204,7 +232,7 @@ jobs:
         git add lib/
         SIZE=$(du -h lib/libflutter_linux_gtk.so.$VERSION | cut -f1)
         git commit -m "chore: add Flutter Engine $VERSION with fontconfig support" \
-          -m "Built from flutter/engine@$VERSION" \
+          -m "Built from flutter/engine@$ENGINE_COMMIT" \
           -m "Added --enable-fontconfig flag" \
           -m "Linux ARM64 release build" \
           -m "Auto-built by GitHub Actions" \
@@ -222,18 +250,19 @@ jobs:
         body: |
           ## 🚀 Flutter Engine with Fontconfig Support
           
-          **Version**: ${{ inputs.version }}  
+          **Flutter SDK Version**: ${{ inputs.flutter_version }}  
+          **Engine Commit**: ${{ steps.detect-commit.outputs.engine_commit }}  
           **Platform**: Linux ARM64  
           **Build Type**: Release  
           **Special Features**: Compiled with `--enable-fontconfig` to fix CJK font rendering
           
           ### 📦 What's Included
-          - `libflutter_linux_gtk.so.${{ inputs.version }}` - Flutter Engine shared library
+          - `libflutter_linux_gtk.so.${{ inputs.flutter_version }}` - Flutter Engine shared library
           
           ### ✅ Verification
           This build includes fontconfig support, verified by:
           ```bash
-          readelf -d libflutter_linux_gtk.so.${{ inputs.version }} | grep fontconfig
+          readelf -d libflutter_linux_gtk.so.${{ inputs.flutter_version }} | grep fontconfig
           # Expected output: libfontconfig.so.1
           ```
           
@@ -247,11 +276,12 @@ jobs:
           - Original issue: CJK characters displaying as squares (□□□) on Linux ARM64
           - Root cause: Official Flutter Engine lacks fontconfig support on ARM64
           - Solution: This custom build with fontconfig enabled
+          - Engine source: https://github.com/flutter/engine/tree/${{ steps.detect-commit.outputs.engine_commit }}
           
           ---
           **Auto-built by GitHub Actions** on $(date -u '+%Y-%m-%d')
         files: |
-          lib/libflutter_linux_gtk.so.${{ inputs.version }}
+          lib/libflutter_linux_gtk.so.${{ inputs.flutter_version }}
         draft: false
         prerelease: false
       env:
