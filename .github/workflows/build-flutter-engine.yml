@@ -160,7 +160,7 @@ jobs:
         echo "生成构建配置..."
         cd "$ENGINE_DIR"
         
-        ./tools/gn \
+        "$DEPOT_TOOLS_DIR"/gn \
           --target-os linux \
           --linux-cpu arm64 \
           --runtime-mode release \
