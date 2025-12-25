@@ -250,6 +250,10 @@ jobs:
         
         git config user.name "GitHub Actions Bot"
         git config user.email "actions@github.com"
+
+        echo "更新本地 main 分支以避免推送冲突..."
+        git fetch origin main
+        git pull --rebase origin main
         
         git add lib/
         SIZE=$(du -h lib/libflutter_linux_gtk.so.$VERSION | cut -f1)
@@ -260,7 +264,12 @@ jobs:
           -m "Auto-built by GitHub Actions" \
           -m "Size: $SIZE" || echo "No changes to commit"
         
-        git push
+        if git diff --cached --quiet; then
+          echo "ℹ️ 无需推送，未检测到新的提交"
+          exit 0
+        fi
+
+        git push origin HEAD:main
         
         echo "✅ 已推送到仓库"
     
