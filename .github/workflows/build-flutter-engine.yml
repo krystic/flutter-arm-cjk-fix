@@ -89,6 +89,13 @@ jobs:
         echo "$DEPOT_TOOLS_DIR" >> $GITHUB_PATH
         echo "✅ depot_tools 已添加到 PATH"
     
+    - name: Save depot_tools cache manually
+      if: always() && steps.cache-depot-tools.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ env.DEPOT_TOOLS_DIR }}
+        key: depot-tools-${{ runner.os }}-v1
+    
     - name: Resolve Flutter revision
       id: resolve-rev
       run: |
@@ -144,6 +151,13 @@ jobs:
         
         echo "✅ 源码同步完成"
         df -h
+    
+    - name: Save Flutter Engine source cache manually
+      if: always() && steps.cache-engine-src.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ env.ENGINE_DIR }}
+        key: flutter-engine-src-${{ steps.resolve-rev.outputs.revision }}-v1
     
     - name: Modify GN configuration for fontconfig
       run: |
