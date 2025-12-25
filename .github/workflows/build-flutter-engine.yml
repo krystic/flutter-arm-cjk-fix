@@ -205,6 +205,13 @@ jobs:
           exit 1
         fi
     
+    - name: Upload SO file as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: libflutter_linux_gtk.so.${{ steps.set-vars.outputs.flutter_version }}
+        path: lib/libflutter_linux_gtk.so.${{ steps.set-vars.outputs.flutter_version }}
+        retention-days: 30
+    
     - name: Update lib README
       run: |
         VERSION="${{ steps.set-vars.outputs.flutter_version }}"
@@ -233,25 +240,28 @@ jobs:
         
         git config user.name "GitHub Actions Bot"
         git config user.email "actions@github.com"
-
+        
+        # 先暂存所有变更
+        git add lib/
+        
         echo "更新本地 main 分支以避免推送冲突..."
         git fetch origin main
         git pull --rebase origin main
         
-        git add lib/
+        # 确认有提交内容后才提交
+        if git diff --cached --quiet; then
+          echo "ℹ️ 无需推送，未检测到新的变更"
+          exit 0
+        fi
+        
         SIZE=$(du -h lib/libflutter_linux_gtk.so.$VERSION | cut -f1)
         git commit -m "chore: add Flutter Engine $VERSION with fontconfig support" \
           -m "Built from flutter/flutter@${FLUTTER_COMMIT}" \
           -m "Added --enable-fontconfig flag" \
           -m "Linux ARM64 release build" \
           -m "Auto-built by GitHub Actions" \
-          -m "Size: $SIZE" || echo "No changes to commit"
+          -m "Size: $SIZE"
         
-        if git diff --cached --quiet; then
-          echo "ℹ️ 无需推送，未检测到新的提交"
-          exit 0
-        fi
-
         git push origin HEAD:main
         
         echo "✅ 已推送到仓库"
