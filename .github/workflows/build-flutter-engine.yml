@@ -114,16 +114,6 @@ jobs:
         echo "revision=$REVISION" >> $GITHUB_OUTPUT
         echo "REVISION=$REVISION" >> $GITHUB_ENV
     
-    - name: Cache Flutter Engine source
-      id: cache-engine-src
-      uses: actions/cache@v4
-      with:
-        path: ${{ env.ENGINE_DIR }}
-        key: flutter-engine-src-${{ steps.resolve-rev.outputs.revision }}-v1
-        restore-keys: |
-          flutter-engine-src-${{ steps.resolve-rev.outputs.revision }}-
-          flutter-engine-src-
-    
     - name: Clone Flutter Engine
       run: |
         echo "准备 Flutter Engine 源码..."
@@ -151,13 +141,6 @@ jobs:
         
         echo "✅ 源码同步完成"
         df -h
-    
-    - name: Save Flutter Engine source cache manually
-      if: always() && steps.cache-engine-src.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
-      with:
-        path: ${{ env.ENGINE_DIR }}
-        key: flutter-engine-src-${{ steps.resolve-rev.outputs.revision }}-v1
     
     - name: Modify GN configuration for fontconfig
       run: |
