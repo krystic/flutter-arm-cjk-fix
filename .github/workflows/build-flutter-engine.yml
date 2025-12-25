@@ -158,7 +158,7 @@ jobs:
     - name: Generate build files with fontconfig
       run: |
         echo "生成构建配置..."
-        cd "$ENGINE_DIR"
+        cd "$ENGINE_DIR/engine/src"
         
         "$DEPOT_TOOLS_DIR"/gn \
           --target-os linux \
