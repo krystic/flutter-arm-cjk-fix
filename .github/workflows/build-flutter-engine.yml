@@ -174,7 +174,7 @@ jobs:
     - name: Build Flutter Engine
       run: |
         echo "开始编译 Flutter Engine..."
-        cd "$ENGINE_DIR"
+        cd "$ENGINE_DIR/engine/src"
         
         # 使用所有可用的 CPU 核心
         JOBS=$(nproc)
@@ -187,7 +187,7 @@ jobs:
     - name: Extract and verify SO file
       run: |
         VERSION="${{ steps.set-vars.outputs.flutter_version }}"
-        SO_SOURCE="$ENGINE_DIR/out/linux_release_arm64/libflutter_linux_gtk.so"
+        SO_SOURCE="$ENGINE_DIR/engine/src/out/linux_release_arm64/libflutter_linux_gtk.so"
         SO_DEST="lib/libflutter_linux_gtk.so.$VERSION"
         
         echo "提取 SO 文件..."
