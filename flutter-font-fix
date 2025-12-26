@@ -32,7 +32,6 @@ detect_flutter_version_from_so() {
     
     # 1. 查找 libflutter_linux_gtk.so
     local so_path=$(find -L "$app_path" -name "libflutter_linux_gtk.so*" 2>/dev/null | head -n1)
-    
     if [[ -z "$so_path" || ! -f "$so_path" ]]; then
         return 1
     fi
@@ -145,7 +144,9 @@ update_flutter_hash_version_cache() {
             awk '{if ($2 ~ /^[0-9]+\.[0-9]+\.[0-9]+$/) print $1 " | " $2}' | \
             sort -V -r -k3
     } >> "$FLUTTER_HASH_VERSION_CACHE"
-    
+    echo "ddf47dd3ff96dbde6d9c614db0d7f019d7c7a2b7 | 3.35.3" >> "$FLUTTER_HASH_VERSION_CACHE"
+
+
     echo "[OK] Cache updated: $FLUTTER_HASH_VERSION_CACHE" >&2
     echo "     缓存已更新。" >&2
     return 0
@@ -989,6 +990,7 @@ do_mount() {
         echo "$app|font" >> "$CONFIG_FILE"
         setup_system_service
     fi
+    echo 
     echo "[OK] [$app] Font mapping applied (workaround)."
     echo "     字体映射已应用（临时方案）。"
 }
