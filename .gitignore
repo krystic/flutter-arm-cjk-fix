@@ -48,3 +48,4 @@ desktop.ini
 
 # Ignore generated thumbnails used in README (if you prefer to keep them, remove these)
 images/*-thumb.png
+test.hash.sh
