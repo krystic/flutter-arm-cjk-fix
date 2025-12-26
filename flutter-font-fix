@@ -1735,6 +1735,10 @@ handle_system_commands() {
             install_completion
             exit 0
             ;;
+        -a|--app|-r|--remove)
+            # 这些是应用级命令，不在这里处理，返回给 parse_and_execute_command
+            return 0
+            ;;
         -*)
             # 未知选项
             echo "[ERROR] Unknown option / 未知选项: $1" >&2
