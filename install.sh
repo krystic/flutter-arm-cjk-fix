@@ -119,6 +119,8 @@ print_summary() {
   echo "- 服务 / Service file:   $SERVICE_FILE"
   echo
   echo "Quick usage / 快速使用:"
+  echo "  sudo flutter-font-fix -e <app_name>    # Fix via Engine SO or similar version (non-Snap)"
+  echo "                                         # 允许使用相近版本 SO 修复非 Snap 分发的应用"
   echo "  sudo flutter-font-fix -a <app_name>    # Root fix via Engine SO; fallback to font mapping"
   echo "                                         # 优先使用 SO 根因修复，回退到字体映射"
   echo "  sudo flutter-font-fix -c <app_name>    # Repair with custom fonts"
