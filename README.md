@@ -2,20 +2,20 @@
 
 [![缩略图](images/snap-store-screenshot-thumb.png)](images/snap-store-screenshot.png)
 
-**Ubuntu ARM 平台下 Flutter Snap 应用 CJK 字体显示修复工具**
+**Ubuntu ARM 平台下 Flutter 应用 CJK 字体显示修复工具**
 
-针对在 Ubuntu ARM 架构上运行的 Flutter Snap 应用出现 CJK（中日韩）字符显示为方框（豆腐块）的问题，提供系统级自动修复方案。
+针对在 Ubuntu ARM 架构上运行的 Flutter 应用（Snap 和非 Snap）出现 CJK（中日韩）字符显示为方框（豆腐块）的问题，提供系统级自动修复方案。
 
-> **适用范围**：本工具主要针对 Ubuntu ARM 系统上以 Snap 方式分发的 Flutter 应用。虽非通用方案，但其实现思路可为类似问题提供参考。
+> **适用范围**：支持 Snap 应用（如 snap-store）和非 Snap 应用（如 rustdesk、AppImage、deb 包等）。通过 Engine Hash 自动检测 Flutter 版本，智能匹配和替换 SO 文件。
 >
-> **Scope**: Primarily targets Flutter apps packaged as Snap on Ubuntu ARM systems. While not universal, the approach may help similar issues.
+> **Scope**: Supports both Snap apps (snap-store) and non-Snap apps (rustdesk, AppImage, deb packages, etc.). Auto-detects Flutter version via Engine Hash for intelligent SO file matching.
 
 ---
 
 ## 📝 背景与原理
 
 ### 问题现象
-在 ARM 架构（树莓派、飞腾、RK3588、Parallels 虚拟机等）运行 Ubuntu 时，许多由 Flutter 引擎构建并通过 Snap 分发的应用（如 `snap-store`、`desktop-security-center`）会出现 CJK 字符显示为方框。
+在 ARM 架构（树莓派、飞腾、RK3588、Parallels 虚拟机等）运行 Ubuntu 时，许多由 Flutter 引擎构建的应用会出现 CJK 字符显示为方框。
 
 ### 根本原因（已验证）
 
@@ -73,19 +73,20 @@ readelf -d libflutter_linux_gtk.so | grep fontconfig
 ## ✨ 特性
 
 ### 核心功能
-* 🎯 **智能双模式修复**
-  - **根治模式**：自动检测 Flutter 版本，使用启用 Fontconfig 的自编译 SO 文件替换官方引擎
-  - **兜底模式**：如无匹配 SO 文件，自动回退到 Noto CJK 字体映射方案
+* 🎯 **双应用类型支持**
+  - **Snap 应用**（`-a` 模式）：自动检测 Flutter 版本，使用精确匹配的 SO 文件，无匹配时回退到字体映射
+  - **非 Snap 应用**（`-e` 模式）：支持直接指定可执行文件路径，智能提取 SO 信息，支持相似版本选择
 * 🔍 **版本智能检测**
-  - 自动从 Snap 包元数据和 GitHub 源码仓库检测 Flutter 版本
-  - 支持版本缓存机制，避免重复网络请求（启动速度提升 54%）
-* 📦 **多字重支持**：完整映射 Regular, Bold, Light, Medium 等 8 种字重（含斜体）
+  - **Hash 精确匹配**：通过 SO 文件中的 Engine Hash 精确识别 Flutter 版本
+  - **版本缓存机制**：缓存 Flutter 版本对照表（7天），避免重复网络请求
+  - **双源查找**：同时查找本地库和 GitHub 仓库，本地精确版本时自动跳过线上查询
+* 📦 **自动下载**：在线 SO 文件自动下载到本地（带进度条），支持 CDN 加速
 * 🔄 **开机自启**：自动创建 Systemd 服务，系统重启后静默恢复所有映射
 * 🛠️ **智能管理**
   - 自动安装字体依赖（`fonts-noto-cjk`）
   - 冲突检测（SO 替换与字体映射模式智能切换）
   - 配置持久化（`/etc/flutter-cjk/`）
-  - Tab 自动补全（应用名称）
+  - Tab 自动补全（Snap 应用名称 + 文件路径）
 
 ### 用户体验
 * 📋 **列表查看**：显示已映射应用的简要或详细信息
@@ -133,46 +134,38 @@ sudo flutter-font-fix --install-service
 
 ### 基本用法
 
-#### 1. 官方模式修复（推荐）
-自动检测应用版本和 Flutter 版本，优先使用 Flutter Engine SO 替换，否则回退到字体映射：
+#### 1. 修复 Snap 应用
+使用精确版本的 SO 文件替换，无匹配时回退到字体映射：
 ```bash
-# 修复单个应用
 sudo flutter-font-fix -a snap-store
 
-# 自动检测流程：
-# 1. 从 snapcraft.io 获取 GitHub 仓库地址
-# 2. 从 snap info 获取当前 commit ID
-# 3. 从 GitHub .fvmrc 文件获取 Flutter 版本
-# 4. 检查 lib/ 目录是否有对应版本的 SO 文件
-
-# 如果找到匹配的 SO 文件：
-# [OK] [snap-store] Root cause fixed with Flutter Engine replacement!
-#      根本问题已通过 Flutter 引擎替换解决！
-
-# 如果没有 SO 文件，自动回退到字体映射：
-# [OK] [snap-store] Font mapping applied (workaround).
-#      字体映射已应用（临时方案）。
-
-# 修复后自动加入开机启动列表
-# 支持 Tab 补全应用名（需先运行 -i 安装补全）
+# 输出示例：
+# [OK] [snap-store] Flutter Engine replaced with libflutter_linux_gtk.so.3.38.1
+#      Flutter 引擎已替换，字体问题已根治。
 ```
 
-**智能版本检测**：
-- 优先从 `github-repos.conf` 对照表查找准确的仓库地址
-- 对照表没有时自动从 snapcraft.io 获取
-- 自动从应用源码获取准确的 Flutter 版本
-- 支持所有开源的 Ubuntu Flutter Snap 应用
-
-**添加新应用到对照表**：
+#### 2. 修复非 Snap 应用
+支持精确版本和相似版本选择（如 3.24.3 用于 3.24.5）：
 ```bash
-# 编辑配置文件
-sudo nano /etc/flutter-cjk/github-repos.conf
+sudo flutter-font-fix -e rustdesk
+# 或
+sudo flutter-font-fix -e /usr/bin/rustdesk
 
-# 添加一行（格式：应用名|GitHub地址）
-app-name|https://github.com/owner/repo
+# 相似版本选择示例：
+# [WARN] No exact version found for 3.24.5
+# [INFO] Found compatible versions:
+#   [1] 3.24.3 [本地/local]
+#   [2] 3.24.1 [线上/online]
+# 尝试这些版本之一吗？[1]: 
 ```
 
-#### 2. 自定义字体修复
+**工作原理**：
+- 从 SO 文件提取 40 位 Engine Hash
+- 查询 Flutter GitHub 匹配版本（7 天缓存）
+- 本地精确版本时自动跳过线上查询
+- 支持 CDN 加速：`--cdn https://raw.staticdn.net/`
+
+#### 3. 自定义字体修复
 交互式选择应用内的字体文件并映射：
 ```bash
 sudo flutter-font-fix -c snap-store
@@ -184,25 +177,19 @@ sudo flutter-font-fix -c snap-store
 # 4. 保存配置并立即应用
 ```
 
-#### 3. 查看已映射应用
+#### 4. 查看和管理
 ```bash
 # 简要列表
 flutter-font-fix -l
 
-# 详细信息（显示模式和映射关系）
+# 详细信息
 flutter-font-fix -d
-```
 
-#### 4. 移除映射
-```bash
-# 移除单个应用（官方+自定义）
-sudo flutter-font-fix -r snap-store
+# 移除映射
+sudo flutter-font-fix -r <app_name>
 
-# 临时移除所有（保留配置）
+# 移除全部
 sudo flutter-font-fix --remove-all
-
-# 完全移除（清理配置和服务）
-sudo flutter-font-fix --uninstall-service
 ```
 
 ---
@@ -213,12 +200,15 @@ sudo flutter-font-fix --uninstall-service
 
 | 命令 | 功能说明 |
 |------|---------|
-| `sudo flutter-font-fix -a <app>` | 修复 Ubuntu 官方应用（优先 SO 替换，回退字体映射）<br>Repair official Ubuntu apps (SO replacement first, fallback to font mapping) |
+| `sudo flutter-font-fix -a <app>` | 修复 Snap 应用（仅精确版本，回退字体映射）<br>Repair Snap apps (exact version only, fallback to font mapping) |
 | `sudo flutter-font-fix -c <app>` | 自定义字体修复<br>Repair with custom fonts |
 | `sudo flutter-font-fix -r <app>` | 移除/卸载映射（包括 SO 和字体）<br>Remove/unmount mappings (SO and fonts) |
 | `flutter-font-fix -l \| --list` | 列出已映射应用<br>List mapped apps |
 | `flutter-font-fix -d \| --detail` | 详细映射信息<br>Detail mappings |
 | `sudo flutter-font-fix --remove-all` | 移除全部<br>Remove all |
+|
+| `sudo flutter-font-fix -e <exe>` | 修复非 Snap 应用（支持精确+相似版本）<br>Repair non-Snap apps (exact + similar versions) |
+|
 | `sudo flutter-font-fix --uninstall-service` | 卸载系统服务<br>Uninstall systemd service |
 | `sudo flutter-font-fix --uninstall` | 完全卸载<br>Uninstall completely |
 | `sudo flutter-font-fix -i \| --install-completion` | 安装补全<br>Install completion |
@@ -231,66 +221,38 @@ sudo flutter-font-fix --uninstall-service
 
 ### 高级选项
 
-**CDN 加速**（用于网络受限或访问 GitHub 受限的环境）
+**CDN 加速**
 ```bash
-# 使用默认源（https://raw.githubusercontent.com/）
-sudo flutter-font-fix -a snap-store
-
-# 使用 staticdn.net 镜像（快速）
+# 使用 CDN 镜像
 sudo flutter-font-fix --cdn https://raw.staticdn.net/ -a snap-store
-
-# 使用 ghproxy.com 代理
-sudo flutter-font-fix --cdn https://ghproxy.com/https://raw.githubusercontent.com/ -a snap-store
+sudo flutter-font-fix --cdn https://ghproxy.com/https://raw.githubusercontent.com/ -e rustdesk
 ```
 
-> **提示**：`--cdn` 是全局参数，需要在同一条命令中与其他参数一起使用。它会覆盖默认的 GitHub Raw CDN 前缀，用于加速 Flutter 版本检测和 SO 文件下载。
+**完全卸载**
+```bash
+sudo flutter-font-fix --uninstall
+```
 
 ### 使用示例
 
-**场景 1：修复 Snap Store**
+**修复 Snap Store**
 ```bash
-# 官方模式（一键修复）
 sudo flutter-font-fix -a snap-store
-
-# 自定义模式（精细控制）
-sudo flutter-font-fix -c snap-store
-# 按提示选择要映射的字体文件和目标字重
 ```
 
-**场景 2：批量查看状态**
+**修复 rustdesk**
 ```bash
-# 查看哪些应用已修复
-flutter-font-fix -l
-
-# 输出示例：
-# [INFO] Apps with mappings:
-#        已有映射的应用：
-#   - snap-store
-#   - desktop-security-center
+sudo flutter-font-fix -e rustdesk
 ```
 
-**场景 3：查看详细配置**
+**查看状态**
 ```bash
 flutter-font-fix -d
-
-# 输出示例：
-# [INFO] Detailed mappings:
-#        详细映射列表：
-# - snap-store [custom/自定义]
-#     • Ubuntu-R.ttf  <=  NotoSansCJK-Regular.ttc
-#     • Ubuntu-B.ttf  <=  NotoSansCJK-Bold.ttc
-# - desktop-security-center [ubuntu/官方]
-```
-
-**场景 4：切换模式**
-```bash
-# 从官方模式切换到自定义模式
-sudo flutter-font-fix -c snap-store
-# 脚本会检测到冲突并提示是否移除官方配置
-
-# 从自定义模式切换到官方模式
-sudo flutter-font-fix -a snap-store
-# 脚本会检测到冲突并提示是否移除自定义配置
+# 输出：
+# - snap-store [so/SO替换]
+#     • Flutter Engine: libflutter_linux_gtk.so.3.38.1
+# - rustdesk [so/SO替换]
+#     • Flutter Engine: libflutter_linux_gtk.so.3.24.3
 ```
 
 ---
@@ -299,9 +261,12 @@ sudo flutter-font-fix -a snap-store
 
 ```
 /etc/flutter-cjk/                      # 配置目录
-├── ubuntu.conf                        # 官方模式应用列表
-├── github-repos.conf                  # GitHub 仓库地址对照表
+├── ubuntu.conf                        # 官方模式应用列表（格式：app|so 或 app|font）
+├── flutter.engine.hash.version        # Flutter Engine Hash→版本对照表缓存（7天）
 └── <app_name>.conf                    # 自定义模式配置文件
+
+/usr/local/lib/flutter-cjk/            # SO 文件本地缓存
+└── libflutter_linux_gtk.so.X.Y.Z      # 下载的 SO 文件
 
 /etc/systemd/system/
 └── flutter-font-fix.service           # 系统启动服务
@@ -312,25 +277,27 @@ sudo flutter-font-fix -a snap-store
 /usr/local/bin/
 └── flutter-font-fix                   # 主执行脚本
 
-<repository>/lib/                      # Flutter Engine SO 文件库
-└── libflutter_linux_gtk.so.X.Y.Z      # 自编译的 SO 文件
+<repository>/lib/                      # GitHub 仓库 SO 文件库
+└── libflutter_linux_gtk.so.X.Y.Z      # 预编译的 SO 文件（30-40MB）
 ```
 
 ### 配置文件说明
 
-**ubuntu.conf** - 官方模式应用列表
+**ubuntu.conf** - 应用配置列表（新格式）
 ```
-snap-store
-desktop-security-center
+snap-store|so              # SO 引擎替换
+desktop-security-center|font   # 字体映射
+rustdesk|so                # 非 Snap 应用也记录在此
+old-app                    # 旧格式（兼容）
 ```
 
-**github-repos.conf** - GitHub 仓库地址对照表
+**flutter.engine.hash.version** - Flutter Engine Hash→版本缓存
 ```bash
-# Format: snap_app_name|github_repo_url
-snap-store|https://github.com/ubuntu/app-center
-desktop-security-center|https://github.com/canonical/desktop-security-center
+# 格式: hash | version
+2c9bc1e4b1... | 3.38.1
+a7f8e9d2c3... | 3.24.3
 ```
-> 脚本优先从此对照表查找 GitHub 仓库地址，如果找不到则尝试从 snapcraft.io 自动获取
+> 缓存有效期 7 天，避免重复查询 Flutter GitHub 仓库
 
 **\<app\>.conf** - 自定义模式配置示例
 ```bash
@@ -347,52 +314,39 @@ desktop-security-center|https://github.com/canonical/desktop-security-center
 ## 🔍 技术细节
 
 ### 实现原理
-1. **智能版本检测**：
-   - 优先从 `github-repos.conf` 对照表查找 GitHub 仓库地址
-   - 如果对照表没有，尝试从 snapcraft.io 自动获取
-   - 从 snap info 提取当前安装的 commit ID
-   - 从 GitHub 对应 commit 的 `.fvmrc` 文件读取 Flutter 版本
-   - 最小化手动维护，大部分应用可自动检测
+1. **Hash 精确检测**：从 SO 文件提取 Flutter Engine Hash（40 位），查询 Flutter GitHub 建立版本对照表（7 天缓存）
+2. **双源查找**：本地优先，精确版本时跳过线上查询，自动下载在线版本（30-40MB，进度条）
+3. **智能替换**：
+   - Snap 应用：`mount --bind` 替换（仅精确版本）
+   - 非 Snap 应用：直接替换系统 SO（支持相似版本，自动备份 `.bak`）
+4. **字体映射兜底**：无匹配 SO 时自动回退到 Noto CJK 字体映射
+5. **开机自启**：Systemd 服务 `After=snapd.service` 确保 Snap 就绪后执行
 
-2. **SO 文件替换**：通过 `mount --bind` 替换 `libflutter_linux_gtk.so`，从根本修复 Fontconfig 支持
-3. **字体映射兜底**：如果没有匹配的 SO 文件，自动回退到 Noto CJK 字体映射
-4. **动态探测**：使用 `find -L` 自动发现 Snap 应用内的字体和 SO 路径
-5. **内存挂载**：通过 `mount --bind` 实现替换（不修改原始文件）
-6. **多字重映射**：支持 8 种字重（R/RI/L/LI/M/MI/B/BI → Regular/Light/Medium/Bold）
-7. **服务集成**：Systemd 服务 `After=snapd.service` 确保 Snap 挂载点就绪后执行
-8. **配置持久化**：所有配置保存在 `/etc/flutter-cjk/`，支持系统重启后恢复
-
-### 版本检测示例
+### 检测流程示例
 ```bash
-# snap-store 为例：
-# 1. 查找 GitHub 仓库（优先从对照表）
-#    github-repos.conf: snap-store|https://github.com/ubuntu/app-center
-#    → 获取: https://github.com/ubuntu/app-center
-# 
-# 2. snap info snap-store | grep installed:
-#    → 获取: 0+git.1b6e6f1d (1313)
-#    → 提取 commit: 1b6e6f1d
-#
-# 3. curl https://github.com/ubuntu/app-center/raw/1b6e6f1d/.fvmrc
-#    → 获取: {"flutter": "3.38.1"}
-#    → 提取版本: 3.38.1
-#
-# 4. 检查: lib/libflutter_linux_gtk.so.3.38.1 是否存在
+# 1. 提取 Hash
+strings libflutter_linux_gtk.so | grep -E '^[0-9a-f]{40}$'
+# → 2c9bc1e4b1a7f8e9d2c3456789abcdef01234567
+
+# 2. 匹配版本（查询 Flutter GitHub，7天缓存）
+# → 3.38.1
+
+# 3. 查找/下载 SO
+# 本地: /usr/local/lib/flutter-cjk/libflutter_linux_gtk.so.3.38.1
+# 线上: https://raw.githubusercontent.com/.../libflutter_linux_gtk.so.3.38.1
 ```
 
 ### 字重映射关系
 
-**官方模式**（预设方案）
+字体映射方案（兜底）：
 ```
-Ubuntu-R.ttf  / Ubuntu-RI.ttf  → NotoSansCJK-Regular.ttc
-Ubuntu-L.ttf  / Ubuntu-LI.ttf  → NotoSansCJK-Light.ttc
-Ubuntu-M.ttf  / Ubuntu-MI.ttf  → NotoSansCJK-Medium.ttc
-Ubuntu-B.ttf  / Ubuntu-BI.ttf  → NotoSansCJK-Bold.ttc
+Ubuntu-R.ttf/RI  → NotoSansCJK-Regular.ttc
+Ubuntu-L.ttf/LI  → NotoSansCJK-Light.ttc
+Ubuntu-M.ttf/MI  → NotoSansCJK-Medium.ttc
+Ubuntu-B.ttf/BI  → NotoSansCJK-Bold.ttc
 ```
 
-**自定义模式**（用户选择）
-- 可映射应用内任意 .ttf/.ttc 字体
-- 可自由选择目标 Noto 字重（Regular/Bold/Light/Medium）
+自定义模式（`-c`）可自由选择映射关系。
 
 ### Systemd 服务配置
 ```ini
@@ -416,37 +370,53 @@ WantedBy=multi-user.target
 
 ## 🤔 常见问题
 
-**Q: 官方模式和自定义模式有什么区别？**
-- **官方模式**：使用预设的 Ubuntu 字体 → Noto CJK 映射方案，适合大多数场景
-- **自定义模式**：可精确控制每个字体文件的映射关系，适合特殊需求或非标准字体
+**Q: -a 模式和 -e 模式有什么区别？**
+- **-a 模式**：针对 Snap 应用，仅使用精确版本的 SO 文件，未找到时回退到字体映射
+- **-e 模式**：针对非 Snap 应用（如 rustdesk），支持精确版本和相似版本选择（如 3.24.3 用于 3.24.5）
 
-**Q: 可以同时使用两种模式吗？**
-- 不能。脚本会检测冲突并提示选择保留哪种模式
+**Q: 什么是相似版本？**
+- 相似版本指主版本号相同的 Flutter 版本（如 3.24.1、3.24.3、3.24.5 都属于 3.24.x）
+- 在 `-e` 模式下，如果找不到精确版本，会提示选择相似版本
+- Snap 应用（`-a` 模式）不使用相似版本，保证稳定性
+
+**Q: 如何恢复原始 SO 文件？**
+```bash
+# 非 Snap 应用（-e 模式）会自动备份
+sudo cp /path/to/libflutter_linux_gtk.so.bak /path/to/libflutter_linux_gtk.so
+
+# Snap 应用（-a 模式）使用 mount，直接卸载即可
+sudo flutter-font-fix -r snap-store
+```
 
 **Q: 修复后需要重启应用吗？**
 - 通常不需要。映射立即生效，但部分应用可能需要重启以重新加载字体缓存
 
 **Q: 会影响系统其他应用吗？**
-- 不会。映射仅作用于指定的 Snap 应用内部，不影响系统全局字体
+- 不会。Snap 应用的 SO 替换仅作用于该应用内部
+- 非 Snap 应用会修改系统目录中的 SO，但会自动备份原文件
 
 **Q: 如何验证修复是否成功？**
 ```bash
-# 检查挂载状态
+# 检查挂载状态（Snap 应用）
 mount | grep flutter
 
 # 查看配置
 flutter-font-fix -d
 
+# 检查 SO 文件（非 Snap 应用）
+ldd /usr/bin/rustdesk | grep libflutter_linux_gtk.so
+ls -la /path/to/libflutter_linux_gtk.so*
+
 # 重启应用并观察中文显示
 ```
 
-**Q: 卸载后如何恢复？**
+**Q: 缓存文件在哪里？**
 ```bash
-# 官方模式
-sudo flutter-font-fix -a <app_name>
+# Hash→版本对照表缓存（7天有效期）
+/etc/flutter-cjk/flutter.engine.hash.version
 
-# 自定义模式
-sudo flutter-font-fix -c <app_name>
+# 下载的 SO 文件缓存
+/usr/local/lib/flutter-cjk/libflutter_linux_gtk.so.*
 ```
 
 ---

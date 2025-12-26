@@ -12,8 +12,7 @@ CUSTOM_FONT_CONFIG_DIR="$CONFIG_DIR"
 # SO 文件版本检测和目录
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 SO_LIB_DIR="/usr/local/lib/flutter-cjk"
-GITHUB_REPO_MAP="$CONFIG_DIR/github-repos.conf"
-FLUTTER_VERSION_CACHE="$CONFIG_DIR/flutter-versions.cache"
+FLUTTER_HASH_VERSION_CACHE="$CONFIG_DIR/flutter.engine.hash.version"
 
 # GitHub Raw CDN 前缀（可通过 --cdn 参数覆盖）
 RAW_CDN_PREFIX="https://raw.githubusercontent.com/"
@@ -27,207 +26,434 @@ NOTO_MEDIUM="$NOTO_DIR/NotoSansCJK-Medium.ttc"
 
 # --- 辅助函数 ---
 
-# 初始化 GitHub 仓库对照表
-initialize_github_repo_map() {
-    mkdir -p "$CONFIG_DIR"
-    if [[ ! -f "$GITHUB_REPO_MAP" ]]; then
-        cat > "$GITHUB_REPO_MAP" <<'EOF'
-# GitHub Repository Mapping for Snap Apps
-# Format: snap_app_name|github_repo_url
-# 格式：Snap应用名|GitHub仓库地址
-
-snap-store|https://github.com/ubuntu/app-center
-desktop-security-center|https://github.com/canonical/desktop-security-center
-EOF
-    fi
-}
-
-# 从 GitHub 仓库对照表获取地址
-get_github_repo_from_map() {
-    local app=$1
-    [[ ! -f "$GITHUB_REPO_MAP" ]] && return 1
+# 统一的 Flutter 版本检测函数（通过 SO 文件 hash）
+detect_flutter_version_from_so() {
+    local app_path=$1
     
-    local repo=$(grep "^$app|" "$GITHUB_REPO_MAP" 2>/dev/null | head -n1 | cut -d'|' -f2)
-    if [[ -n "$repo" ]]; then
-        echo "$repo"
-        return 0
-    fi
-    return 1
-}
-
-# 从 snapcraft.io 获取 GitHub 仓库地址
-get_github_repo_from_snapcraft() {
-    local app=$1
-    local repo=$(curl -sL "https://snapcraft.io/$app" 2>/dev/null | grep -oP 'github\.com/[\w\-/]+' | head -n 1)
-    if [[ -n "$repo" ]]; then
-        echo "https://$repo"
-        return 0
-    fi
-    return 1
-}
-
-# 获取 GitHub 仓库地址（优先从对照表，否则从 snapcraft.io）
-get_github_repo() {
-    local app=$1
+    # 1. 查找 libflutter_linux_gtk.so
+    local so_path=$(find -L "$app_path" -name "libflutter_linux_gtk.so*" 2>/dev/null | head -n1)
     
-    # 优先从对照表查找
-    local repo=$(get_github_repo_from_map "$app")
-    if [[ -n "$repo" ]]; then
-        echo "$repo"
-        return 0
+    if [[ -z "$so_path" || ! -f "$so_path" ]]; then
+        return 1
     fi
     
-    # 对照表没有，尝试从 snapcraft.io 获取
-    repo=$(get_github_repo_from_snapcraft "$app")
-    if [[ -n "$repo" ]]; then
-        echo "$repo"
-        return 0
-    fi
+    # 2. 提取 hash
+    local engine_hashes
+    engine_hashes=$(extract_engine_hash_from_so "$so_path") || return 1
     
-    return 1
-}
-
-# 从 snap info 获取 commit ID
-get_commit_id() {
-    local app=$1
-    # 匹配格式: 0+git.d93b42d (100) 23MB
-    local commit=$(snap info "$app" 2>/dev/null | grep "installed:" | grep -oP '\+git\.\K[a-f0-9]+' | head -n1)
-    if [[ -n "$commit" ]]; then
-        echo "$commit"
-        return 0
-    fi
-    return 1
-}
-
-# 从 GitHub .fvmrc 获取 Flutter 版本
-get_flutter_version_from_fvmrc() {
-    local repo=$1
-    local commit=$2
-
-    # 规范化仓库路径为 owner/repo 形式
-    local repo_path=${repo#https://github.com/}
-    repo_path=${repo_path#http://github.com/}
-    repo_path=${repo_path%.git}
-
-    local raw_base="${RAW_CDN_PREFIX}${repo_path}/${commit}"
-
-    # 尝试 .fvmrc
-    local fvmrc_url="$raw_base/.fvmrc"
-    local flutter_version=$(curl -sL "$fvmrc_url" 2>/dev/null | grep -oP '"flutter"\s*:\s*"\K[0-9.]+')
-
-    if [[ -n "$flutter_version" ]]; then
-        echo "$flutter_version"
-        return 0
-    fi
-
-    # 尝试 .fvm/fvm_config.json
-    local fvm_config_url="$raw_base/.fvm/fvm_config.json"
-    flutter_version=$(curl -sL "$fvm_config_url" 2>/dev/null | grep -oP '"flutterSdkVersion"\s*:\s*"\K[0-9.]+')
-
-    if [[ -n "$flutter_version" ]]; then
-        echo "$flutter_version"
-        return 0
-    fi
-
-    return 1
-}
-
-# 从缓存获取 Flutter 版本
-get_flutter_version_from_cache() {
-    local app=$1
-    local commit=$2
+    # 3. 更新 hash-version 缓存
+    update_flutter_hash_version_cache 2>/dev/null || true
     
-    [[ ! -f "$FLUTTER_VERSION_CACHE" ]] && return 1
+    # 4. 查找匹配的版本
+    local flutter_version=""
     
-    local cached=$(grep "^$app|$commit|" "$FLUTTER_VERSION_CACHE" 2>/dev/null | head -n1)
-    if [[ -n "$cached" ]]; then
-        local flutter_version=$(echo "$cached" | cut -d'|' -f3)
-        if [[ -n "$flutter_version" ]]; then
+    while IFS= read -r hash; do
+        [[ -z "$hash" ]] && continue
+        flutter_version=$(find_flutter_version_by_hash "$hash" 2>/dev/null)
+        if [[ $? -eq 0 && -n "$flutter_version" ]]; then
             echo "$flutter_version"
             return 0
         fi
-    fi
+    done <<< "$engine_hashes"
+    
     return 1
 }
 
-# 保存 Flutter 版本到缓存
-save_flutter_version_to_cache() {
-    local app=$1
-    local commit=$2
-    local flutter_version=$3
+# --- 非 Snap 应用支持函数 ---
+
+# 从可执行文件获取 libflutter_linux_gtk.so 的路径
+get_so_path_from_executable() {
+    local exe_path=$1
     
-    mkdir -p "$CONFIG_DIR"
-    
-    # 移除该应用的所有旧缓存条目（因为可能更新了）
-    if [[ -f "$FLUTTER_VERSION_CACHE" ]]; then
-        sed -i "/^$app|/d" "$FLUTTER_VERSION_CACHE" 2>/dev/null
+    if [[ ! -x "$exe_path" ]]; then
+        echo "[ERROR] Executable not found or not executable: $exe_path" >&2
+        echo "        可执行文件不存在或无执行权限。" >&2
+        return 1
     fi
     
-    # 添加新的缓存条目
-    echo "$app|$commit|$flutter_version" >> "$FLUTTER_VERSION_CACHE"
+    local so_path=$(ldd "$exe_path" 2>/dev/null | grep libflutter_linux_gtk.so | awk '{print $3}')
+    
+    if [[ -z "$so_path" ]]; then
+        echo "[ERROR] libflutter_linux_gtk.so not found in executable dependencies" >&2
+        echo "        未在可执行文件依赖中找到 libflutter_linux_gtk.so。" >&2
+        return 1
+    fi
+    
+    if [[ ! -f "$so_path" ]]; then
+        echo "[ERROR] SO file path found but file doesn't exist: $so_path" >&2
+        echo "        找到 SO 路径但文件不存在。" >&2
+        return 1
+    fi
+    
+    echo "$so_path"
+    return 0
 }
 
-# 自动获取应用的 Flutter 版本
-auto_detect_flutter_version() {
-    local app=$1
-    local use_cache=${2:-true}  # 默认使用缓存
+# 从 SO 文件提取 Flutter Engine hash（可能有多个）
+extract_engine_hash_from_so() {
+    local so_path=$1
     
-    echo "[INFO] Auto-detecting Flutter version..." >&2
-    echo "       正在自动检测 Flutter 版本..." >&2
-    
-    # 步骤 1: 获取 commit ID
-    local commit=$(get_commit_id "$app")
-    if [[ -z "$commit" ]]; then
-        echo "[WARN] Could not extract commit ID from snap info" >&2
-        echo "       未能从 snap info 提取 commit ID。" >&2
+    if [[ ! -f "$so_path" ]]; then
+        echo "[ERROR] SO file not found: $so_path" >&2
         return 1
     fi
-    echo "       Commit: $commit" >&2
     
-    # 步骤 2: 尝试从缓存获取版本
-    if [[ "$use_cache" == "true" ]]; then
-        local cached_version=$(get_flutter_version_from_cache "$app" "$commit")
-        if [[ -n "$cached_version" ]]; then
-            echo "       Using cached version: $cached_version" >&2
-            echo "       使用缓存的版本: $cached_version" >&2
-            echo "$cached_version"
+    local hashes=$(strings "$so_path" 2>/dev/null | grep -E "^[0-9a-f]{40}$")
+    
+    if [[ -z "$hashes" ]]; then
+        echo "[ERROR] Could not extract engine hash from SO file" >&2
+        echo "        无法从 SO 文件提取引擎 hash。" >&2
+        return 1
+    fi
+    
+    echo "$hashes"
+    return 0
+}
+
+# 生成或更新 Flutter hash-version 对照表缓存
+update_flutter_hash_version_cache() {
+    mkdir -p "$CONFIG_DIR"
+    
+    # 如果缓存已存在且不是很旧（7天内），直接返回
+    if [[ -f "$FLUTTER_HASH_VERSION_CACHE" ]]; then
+        local cache_age=$(($(date +%s) - $(stat -c %Y "$FLUTTER_HASH_VERSION_CACHE" 2>/dev/null || echo 0)))
+        if [[ $cache_age -lt 604800 ]]; then
             return 0
         fi
-        echo "       Cache miss, fetching from GitHub..." >&2
-        echo "       缓存未命中，从 GitHub 检测..." >&2
     fi
     
-    # 步骤 3: 获取 GitHub 仓库
-    local repo=$(get_github_repo "$app")
-    if [[ -z "$repo" ]]; then
-        echo "[WARN] Could not find GitHub repository for: $app" >&2
-        echo "       未能找到应用的 GitHub 仓库。" >&2
-        echo "" >&2
-        echo "[INFO] You can add it manually to:" >&2
-        echo "       您可以手动添加到配置文件：" >&2
-        echo "       $GITHUB_REPO_MAP" >&2
-        echo "       Format: $app|https://github.com/owner/repo" >&2
-        return 1
-    fi
-    echo "       Repository: $repo" >&2
+    echo "[INFO] Updating Flutter hash-version cache from GitHub..." >&2
+    echo "       正在从 GitHub 更新 Flutter hash-version 对照表..." >&2
     
-    # 步骤 4: 从 .fvmrc 获取 Flutter 版本
-    local flutter_version=$(get_flutter_version_from_fvmrc "$repo" "$commit")
-    if [[ -z "$flutter_version" ]]; then
-        echo "[WARN] Could not find Flutter version in .fvmrc" >&2
-        echo "       未能在 .fvmrc 中找到 Flutter 版本。" >&2
-        return 1
-    fi
+    # 使用与 test.hash.sh 相同的逻辑
+    {
+        git ls-remote --tags --refs https://github.com/flutter/flutter.git 2>/dev/null | \
+            sed 's/refs\/tags\///' | \
+            awk '{
+                split($2, v, ".");
+                if ($2 ~ /^[0-9]+\.[0-9]+\.[0-9]+$/) {
+                    if (v[1] > 3 || (v[1] == 3 && v[2] > 27) || (v[1] == 3 && v[2] == 27 && v[3] >= 4)) {
+                        print $1 " | " $2
+                    }
+                }
+            }' | sort -V -r -k3
+    } > "$FLUTTER_HASH_VERSION_CACHE"
+
+    {
+        git ls-remote --tags --refs https://github.com/flutter/engine.git 2>/dev/null | \
+            sed 's/refs\/tags\///' | \
+            awk '{if ($2 ~ /^[0-9]+\.[0-9]+\.[0-9]+$/) print $1 " | " $2}' | \
+            sort -V -r -k3
+    } >> "$FLUTTER_HASH_VERSION_CACHE"
     
-    echo "       Flutter version: $flutter_version" >&2
-    
-    # 步骤 5: 保存到缓存
-    save_flutter_version_to_cache "$app" "$commit" "$flutter_version"
-    echo "       Version cached successfully" >&2
-    echo "       版本已缓存" >&2
-    
-    echo "$flutter_version"
+    echo "[OK] Cache updated: $FLUTTER_HASH_VERSION_CACHE" >&2
+    echo "     缓存已更新。" >&2
     return 0
+}
+
+# 从 hash 查找对应的 Flutter 版本
+find_flutter_version_by_hash() {
+    local hash=$1
+    
+    # 确保缓存存在
+    if [[ ! -f "$FLUTTER_HASH_VERSION_CACHE" ]]; then
+        update_flutter_hash_version_cache || return 1
+    fi
+    
+    # 查找匹配的版本（可能有多个）
+    local versions=$(grep "^$hash" "$FLUTTER_HASH_VERSION_CACHE" 2>/dev/null | awk -F' \\| ' '{print $2}')
+    
+    if [[ -z "$versions" ]]; then
+        echo "[WARN] No matching Flutter version found for hash: $hash" >&2
+        echo "       未找到匹配该 hash 的 Flutter 版本。" >&2
+        return 1
+    fi
+    
+    # 如果有多个版本，显示所有并让用户选择
+    local version_array=()
+    while IFS= read -r ver; do
+        [[ -n "$ver" ]] && version_array+=("$ver")
+    done <<< "$versions"
+    
+    if [[ ${#version_array[@]} -eq 0 ]]; then
+        return 1
+    elif [[ ${#version_array[@]} -eq 1 ]]; then
+        echo "${version_array[0]}"
+        return 0
+    else
+        echo "[INFO] Multiple versions found for hash $hash:" >&2
+        echo "       找到多个匹配的版本：" >&2
+        local i
+        for ((i=0; i<${#version_array[@]}; i++)); do
+            echo "  [$((i+1))] ${version_array[$i]}" >&2
+        done
+        echo "" >&2
+        read -r -p "Select version number (选择版本编号) [1]: " choice
+        choice=${choice:-1}
+        
+        if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#version_array[@]} )); then
+            echo "${version_array[$((choice-1))]}"
+            return 0
+        else
+            echo "[ERROR] Invalid selection" >&2
+            echo "        选择无效。" >&2
+            return 1
+        fi
+    fi
+}
+
+# 处理非 Snap 应用（通过可执行文件路径）
+handle_executable_app() {
+    local exe_path=$1
+    
+    echo ""
+    echo "[INFO] Processing executable: $exe_path"
+    echo "       正在处理可执行文件..."
+    echo ""
+    
+    # 步骤 1: 获取 SO 文件路径
+    echo "[1/5] Finding libflutter_linux_gtk.so..."
+    echo "      正在查找 libflutter_linux_gtk.so..."
+    local so_path
+    so_path=$(get_so_path_from_executable "$exe_path") || return 1
+    echo "      Found: $so_path"
+    echo ""
+    
+    # 步骤 2: 提取 Engine hash
+    echo "[2/5] Extracting Flutter Engine hash..."
+    echo "      正在提取 Flutter Engine hash..."
+    local engine_hashes
+    engine_hashes=$(extract_engine_hash_from_so "$so_path") || return 1
+    
+    # 统计 hash 数量
+    local hash_count=$(echo "$engine_hashes" | wc -l)
+    echo "      Found $hash_count hash(es):"
+    while IFS= read -r hash; do
+        echo "        - $hash"
+    done <<< "$engine_hashes"
+    echo ""
+    
+    # 步骤 3: 更新 hash-version 缓存
+    echo "[3/5] Updating hash-version cache..."
+    echo "      正在更新 hash-version 对照表..."
+    update_flutter_hash_version_cache || {
+        echo "[WARN] Failed to update cache, will try with existing cache" >&2
+        echo "       更新缓存失败，将使用现有缓存。" >&2
+    }
+    echo ""
+    
+    # 步骤 4: 查找对应的 Flutter 版本（逐个 hash 尝试）
+    echo "[4/5] Finding Flutter version..."
+    echo "      正在查找对应的 Flutter 版本..."
+    local flutter_version=""
+    local matched_hash=""
+    
+    while IFS= read -r hash; do
+        [[ -z "$hash" ]] && continue
+        echo "      Trying hash: $hash"
+        flutter_version=$(find_flutter_version_by_hash "$hash" 2>/dev/null)
+        if [[ $? -eq 0 && -n "$flutter_version" ]]; then
+            matched_hash="$hash"
+            break
+        fi
+    done <<< "$engine_hashes"
+    
+    if [[ -z "$flutter_version" ]]; then
+        echo ""
+        echo "[ERROR] Could not determine Flutter version for any hash" >&2
+        echo "        无法为任何 hash 确定 Flutter 版本。" >&2
+        echo ""
+        echo "[INFO] Tried hashes:" >&2
+        while IFS= read -r hash; do
+            echo "       - $hash" >&2
+        done <<< "$engine_hashes"
+        echo ""
+        echo "[INFO] You may need to compile Flutter Engine manually." >&2
+        echo "       您可能需要手动编译 Flutter Engine。" >&2
+        echo "       See: https://github.com/krystic/flutter-arm-cjk-fix/blob/main/README.md" >&2
+        return 1
+    fi
+    
+    echo "      Version: $flutter_version (matched hash: ${matched_hash:0:8}...)"
+    echo ""
+    
+    # 步骤 5: 统一查找所有可用版本（精确+相似，本地+线上）
+    echo "[5/5] Checking for available SO files..."
+    echo "      正在检查可用的 SO 文件..."
+    
+    local all_versions
+    all_versions=$(find_all_available_versions "$flutter_version")
+    
+    if [[ $? -ne 0 || -z "$all_versions" ]]; then
+        echo ""
+        echo "[ERROR] No compatible versions found" >&2
+        echo "        未找到兼容版本。" >&2
+        echo ""
+        echo "[INFO] You need to compile Flutter Engine manually." >&2
+        echo "       您需要手动编译 Flutter Engine。" >&2
+        echo "       See: https://github.com/krystic/flutter-arm-cjk-fix/blob/main/README.md" >&2
+        return 1
+    fi
+    
+    # 检查是否有精确匹配
+    local exact_match=""
+    local exact_source=""
+    while IFS='|' read -r version source is_exact; do
+        if [[ "$is_exact" == "true" ]]; then
+            exact_match="$version"
+            exact_source="$source"
+            break
+        fi
+    done <<< "$all_versions"
+    
+    local replacement_so=""
+    
+    if [[ -n "$exact_match" ]]; then
+        # 找到精确版本
+        echo ""
+        echo "[OK] Exact version found: $exact_match"
+        echo "     找到精确版本：$exact_match"
+        replacement_so="$SO_LIB_DIR/libflutter_linux_gtk.so.$exact_match"
+        
+        # 如果是线上版本且本地不存在，下载
+        if [[ "$exact_source" == "online" && ! -f "$replacement_so" ]]; then
+            echo ""
+            echo "[INFO] Downloading from GitHub..." >&2
+            echo "       正在从 GitHub 下载..." >&2
+            replacement_so=$(download_so_file_if_needed "$exact_match")
+            if [[ $? -ne 0 || ! -f "$replacement_so" ]]; then
+                echo "[ERROR] Failed to download" >&2
+                echo "        下载失败。" >&2
+                return 1
+            fi
+        fi
+    else
+        # 未找到精确版本，显示相似版本供选择
+        echo ""
+        echo "[WARN] No exact version found for $flutter_version" >&2
+        echo "       未找到精确版本 $flutter_version" >&2
+        echo ""
+        echo "[INFO] Found compatible versions (same major.minor):" >&2
+        echo "       找到兼容版本（相同主版本号）：" >&2
+        
+        
+        local version_array=()
+        local source_array=()
+        while IFS='|' read -r ver source is_exact; do
+            if [[ -n "$ver" ]]; then
+                version_array+=("$ver")
+                source_array+=("$source")
+            fi
+        done <<< "$all_versions"
+        
+        if [[ ${#version_array[@]} -eq 0 ]]; then
+            echo ""
+            echo "[ERROR] No compatible versions found" >&2
+            echo "        未找到兼容版本。" >&2
+            return 1
+        fi
+        
+        local i
+        echo
+        for ((i=0; i<${#version_array[@]}; i++)); do
+            local source_tag=""
+            if [[ "${source_array[$i]}" == "local" ]]; then
+                source_tag=" [本地/local]"
+            else
+                source_tag=" [线上/online]"
+            fi
+            echo "       [$((i+1))] ${version_array[$i]}${source_tag}" >&2
+        done
+        echo ""
+        echo "Try one of these versions? (select number or 'n' to skip) [1]: "
+        read -r -p "尝试这些版本吗？（输入编号或 'n' 跳过）[1]:" choice
+        choice=${choice:-1}
+        
+        if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#version_array[@]} )); then
+            local selected_version="${version_array[$((choice-1))]}"
+            local selected_source="${source_array[$((choice-1))]}"
+            replacement_so="$SO_LIB_DIR/libflutter_linux_gtk.so.$selected_version"
+            
+            # 如果是线上版本，需要先下载
+            if [[ "$selected_source" == "online" && ! -f "$replacement_so" ]]; then
+                echo ""
+                echo "[INFO] Downloading Flutter Engine $selected_version from GitHub..." >&2
+                echo "       正在从 GitHub 下载 Flutter Engine $selected_version..." >&2
+                
+                replacement_so=$(download_so_file_if_needed "$selected_version")
+                if [[ $? -ne 0 || ! -f "$replacement_so" ]]; then
+                    echo "[ERROR] Failed to download Flutter Engine $selected_version" >&2
+                    echo "        下载失败。" >&2
+                    return 1
+                fi
+            fi
+            
+            if [[ -f "$replacement_so" ]]; then
+                echo ""
+                echo "[OK] Using version: $selected_version (instead of $flutter_version)"
+                echo "     使用版本：$selected_version（代替 $flutter_version）"
+                echo ""
+                echo "[WARN] This is not an exact match - test carefully!"
+                echo "       这不是精确匹配 - 请仔细测试！"
+            else
+                echo "[ERROR] SO file not found: $replacement_so" >&2
+                return 1
+            fi
+        else
+            echo ""
+            echo "[INFO] Skipped. You need to compile Flutter Engine manually." >&2
+            echo "       已跳过。您需要手动编译 Flutter Engine。" >&2
+            echo "       See: https://github.com/krystic/flutter-arm-cjk-fix/blob/main/README.md" >&2
+            return 1
+        fi
+    fi
+    
+    # 执行替换（统一处理精确版本和相似版本）
+    if [[ -n "$replacement_so" && -f "$replacement_so" ]]; then
+        echo ""
+        
+        # 备份原 SO 文件
+        local backup_path="${so_path}.bak"
+        if [[ ! -f "$backup_path" ]]; then
+            echo "[INFO] Creating backup..."
+            echo "       正在创建备份..."
+            cp "$so_path" "$backup_path" && chmod -w "$backup_path" || {
+                echo "[ERROR] Failed to create backup" >&2
+                echo "        备份失败。" >&2
+                return 1
+            }
+            echo "      Backup: $backup_path"
+        else
+            echo "[INFO] Backup already exists: $backup_path"
+            echo "       备份已存在。"
+        fi
+        echo ""
+        
+        # 替换 SO 文件
+        echo "[INFO] Replacing SO file..."
+        echo "       正在替换 SO 文件..."
+        cp "$replacement_so" "$so_path" && chmod +x "$so_path" || {
+            echo "[ERROR] Failed to replace SO file" >&2
+            echo "        替换失败。" >&2
+            return 1
+        }
+        
+        echo ""
+        echo "[OK] Flutter Engine replaced successfully!"
+        echo "     Flutter Engine 已成功替换！"
+        echo ""
+        echo "[INFO] Original: $backup_path"
+        echo "       Replacement: $so_path"
+        echo ""
+        echo "[INFO] To restore original:"
+        echo "       恢复原文件的命令："
+        echo "       sudo cp $backup_path $so_path"
+        
+        return 0
+    else
+        echo "[ERROR] No SO file available for replacement" >&2
+        return 1
+    fi
 }
 
 # 尝试下载指定版本的 SO 文件（若本地不存在）
@@ -282,10 +508,78 @@ download_so_file_if_needed() {
     fi
 }
 
-# 检查 SO 文件是否存在（若本地缺失则尝试下载）
-check_so_file_exists() {
-    local flutter_version=$1
-    download_so_file_if_needed "$flutter_version"
+# 查找相似版本的 SO 文件（主版本号匹配）
+# 查找所有可用版本（包括精确和相似版本，本地和线上）
+find_all_available_versions() {
+    local target_version=$1
+    
+    # 提取主版本号 (major.minor)
+    local major_minor=$(echo "$target_version" | grep -oE '^[0-9]+\.[0-9]+')
+    
+    if [[ -z "$major_minor" ]]; then
+        return 1
+    fi
+    
+    local -A version_map
+    local found_exact_local=false
+    
+    # 1. 查找本地所有相关版本（包括精确和相似）
+    if [[ -d "$SO_LIB_DIR" ]]; then
+        while IFS= read -r so_file; do
+            [[ -f "$so_file" ]] || continue
+            local version=$(basename "$so_file" | sed 's/libflutter_linux_gtk\.so\.//')
+            # 收集所有匹配主版本号的版本
+            if [[ "$version" =~ ^${major_minor}\. ]]; then
+                version_map["$version"]="local"
+                # 检查是否找到精确匹配
+                [[ "$version" == "$target_version" ]] && found_exact_local=true
+            fi
+        done < <(find "$SO_LIB_DIR" -name "libflutter_linux_gtk.so.*" 2>/dev/null)
+    fi
+    
+    # 2. 查询项目 GitHub lib 目录中的所有版本（仅在本地未找到精确版本时）
+    if [[ "$found_exact_local" == "false" ]]; then
+        echo 
+        echo "[INFO] Checking GitHub repository for available versions..." >&2
+        echo "       正在检查 GitHub 仓库可用版本..." >&2
+        
+        # 使用 GitHub API 获取 lib 目录内容
+        local github_api_url="https://api.github.com/repos/krystic/flutter-arm-cjk-fix/contents/lib"
+        local github_files=$(curl -s "$github_api_url" 2>/dev/null | grep -oP '"name":\s*"libflutter_linux_gtk\.so\.\K[0-9]+\.[0-9]+\.[0-9]+' || true)
+        
+        if [[ -n "$github_files" ]]; then
+            while IFS= read -r version; do
+                [[ -z "$version" ]] && continue
+                # 收集所有匹配主版本号的版本
+                if [[ "$version" =~ ^${major_minor}\. ]]; then
+                    # 如果本地已有，保持 local 标记；否则标记为 online
+                    if [[ -z "${version_map[$version]}" ]]; then
+                        version_map["$version"]="online"
+                    fi
+                fi
+            done <<< "$github_files"
+        fi
+    fi
+    
+    # 3. 输出所有版本（带标记），格式: version|source|is_exact
+    if [[ ${#version_map[@]} -gt 0 ]]; then
+        for version in $(printf '%s\n' "${!version_map[@]}" | sort -V -r); do
+            local is_exact="false"
+            [[ "$version" == "$target_version" ]] && is_exact="true"
+            echo "$version|${version_map[$version]}|$is_exact"
+        done
+        return 0
+    fi
+    
+    return 1
+}
+
+# 向后兼容：查找相似版本（调用新的统一函数）
+find_similar_so_versions() {
+    local target_version=$1
+    find_all_available_versions "$target_version" | while IFS='|' read -r version source is_exact; do
+        echo "$version|$source"
+    done
 }
 
 # 挂载 SO 文件替换
@@ -317,10 +611,12 @@ mount_so_replacement() {
     
     # 挂载新的 SO 文件
     if mount --bind "$so_file" "$target_so" 2>/dev/null; then
-        echo "[OK] [$app] Flutter Engine replaced with $so_file"
-        echo "     Flutter 引擎已替换，字体问题已根治。"
+        echo
+        echo "[OK] Mounted successfully"
+        echo "     挂载成功。"
         return 0
     else
+        echo
         echo "[ERROR] Failed to mount SO file replacement"
         echo "        SO 文件替换挂载失败。"
         return 1
@@ -554,40 +850,98 @@ do_mount() {
     echo "[INFO] Checking for Flutter Engine SO replacement..."
     echo "       正在检查 Flutter 引擎 SO 替换文件..."
     
-    # 自动检测 Flutter 版本
-    local flutter_version=$(auto_detect_flutter_version "$app")
+    # 使用统一的 SO hash 检测版本
+    local flutter_version=$(detect_flutter_version_from_so "$snap_path")
+    
     if [[ -n "$flutter_version" ]]; then
-        local so_file=$(check_so_file_exists "$flutter_version")
-        if [[ -n "$so_file" ]]; then
-            echo ""
-            echo "[INFO] Found matching SO file!"
-            echo "       找到匹配的 SO 文件！"
-            echo "       SO file: $(basename "$so_file")"
-            
-            if mount_so_replacement "$app" "$so_file"; then
-                if [[ "$is_startup" == "false" ]]; then
-                    mkdir -p "$CONFIG_DIR"
-                    # 保存配置：app|so （标记使用 SO 替换）
-                    sed -i "/^$app|/d" "$CONFIG_FILE" 2>/dev/null
-                    sed -i "/^$app$/d" "$CONFIG_FILE" 2>/dev/null
-                    echo "$app|so" >> "$CONFIG_FILE"
-                    setup_system_service
+        echo "       Detected Flutter version: $flutter_version"
+        echo "       检测到 Flutter 版本：$flutter_version"
+        echo ""
+        
+        # 统一查找所有可用版本（精确+相似，本地+线上）
+        echo "[INFO] Checking for available SO files..."
+        echo "       正在检查可用的 SO 文件..."
+        
+        local all_versions
+        all_versions=$(find_all_available_versions "$flutter_version")
+        
+        if [[ $? -eq 0 && -n "$all_versions" ]]; then
+            # 检查是否有精确匹配
+            local exact_match=""
+            local exact_source=""
+            while IFS='|' read -r version source is_exact; do
+                if [[ "$is_exact" == "true" ]]; then
+                    exact_match="$version"
+                    exact_source="$source"
+                    break
                 fi
+            done <<< "$all_versions"
+            
+            local so_file=""
+            
+            if [[ -n "$exact_match" ]]; then
+                # 找到精确版本
                 echo ""
-                echo "[OK] [$app] Root cause fixed with Flutter Engine replacement!"
-                echo "     根本问题已通过 Flutter 引擎替换解决！"
-                return 0
+                echo "[OK] Exact version found: $exact_match"
+                echo "     找到精确版本：$exact_match"
+                so_file="$SO_LIB_DIR/libflutter_linux_gtk.so.$exact_match"
+                
+                # 如果是线上版本且本地不存在，下载
+                if [[ "$exact_source" == "online" && ! -f "$so_file" ]]; then
+                    echo ""
+                    echo "[INFO] Downloading from GitHub..." >&2
+                    echo "       正在从 GitHub 下载..." >&2
+                    so_file=$(download_so_file_if_needed "$exact_match")
+                    if [[ $? -ne 0 || ! -f "$so_file" ]]; then
+                        echo "[ERROR] Failed to download" >&2
+                        echo "        下载失败。" >&2
+                        so_file=""
+                    fi
+                fi
+            else
+                # -a 模式不使用相似版本，直接跳过
+                echo ""
+                echo "[WARN] No exact version found for $flutter_version" >&2
+                echo "       未找到精确版本 $flutter_version" >&2
             fi
-        else
-            echo ""
-            echo "[WARN] No SO file found for Flutter $flutter_version"
-            echo "       未找到 Flutter $flutter_version 对应的 SO 文件。"
-            echo ""
-            echo "[INFO] You can compile it yourself following:"
-            echo "       您可以按照以下文档自行编译："
-            echo "       $(dirname "$SCRIPT_PATH")/FONTCONFIG_BUG_INVESTIGATION.md"
-            echo ""
+            
+            # 如果找到了 SO 文件，执行挂载
+            if [[ -n "$so_file" && -f "$so_file" ]]; then
+                echo ""
+                echo "[INFO] Found matching SO file!"
+                echo "       找到匹配的 SO 文件！"
+                echo "       SO file: $(basename "$so_file")"
+                
+                if mount_so_replacement "$app" "$so_file"; then
+                    if [[ "$is_startup" == "false" ]]; then
+                        mkdir -p "$CONFIG_DIR"
+                        # 保存配置：app|so （标记使用 SO 替换）
+                        sed -i "/^$app|/d" "$CONFIG_FILE" 2>/dev/null
+                        sed -i "/^$app$/d" "$CONFIG_FILE" 2>/dev/null
+                        echo "$app|so" >> "$CONFIG_FILE"
+                        setup_system_service
+                    fi
+                    echo ""
+                    echo "[OK] [$app] Flutter Engine replaced with $(basename "$so_file")"
+                    echo "     Flutter 引擎已替换，字体问题已根治。"
+                    return 0
+                fi
+            fi
         fi
+        
+        # 未找到任何可用版本
+        echo ""
+        echo "[WARN] No compatible SO file found for Flutter $flutter_version"
+        echo "       未找到 Flutter $flutter_version 的兼容 SO 文件。"
+        echo ""
+        echo "[INFO] You can compile it yourself following:"
+        echo "       您可以按照以下文档自行编译："
+        echo "       https://github.com/krystic/flutter-arm-cjk-fix/blob/main/README.md"
+        echo ""
+    else
+        echo ""
+        echo "[WARN] Could not detect Flutter version from SO file"
+        echo "       无法从 SO 文件检测 Flutter 版本"
     fi
     
     # 没有找到 SO 文件或自动检测失败
@@ -678,6 +1032,10 @@ _flutter_font_fix_completion() {
                 apps="$(snap list | awk 'NR>1{print $1}')"
                 COMPREPLY=( $(compgen -W "$apps" -- "$cur") )
             fi
+            ;;
+        -e|--executable)
+            # 对本地文件进行补全
+            COMPREPLY=( $(compgen -f -- "$cur") )
             ;;
         -r|--remove)
             # 补全已映射的应用
@@ -1240,6 +1598,31 @@ mount_all_custom_fonts() {
 
 # --- 主逻辑 ---
 
+# 显示用法说明
+show_usage() {
+    echo "Usage:"
+    echo "  sudo $(basename "$0") -a <app_name>       Repair Snap app with Flutter Engine or fonts"
+    echo "                                            使用引擎修复或字体映射 (Snap 应用)"
+    echo "  sudo $(basename "$0") -c <app_name>       Repair with custom fonts / 自定义字体修复"
+    echo "  sudo $(basename "$0") -r <app_name>       Remove/unmount mappings / 移除/卸载映射"
+    echo "  $(basename "$0") -l | --list              List mapped apps / 列出已映射应用"
+    echo "  $(basename "$0") -d | --detail            Detail mappings / 详细映射信息"
+    echo "  sudo $(basename "$0") --remove-all        Remove all / 移除全部"
+    echo ""
+    echo "  sudo $(basename "$0") -e <exe_path>       Repair non-Snap app by executable path"
+    echo "                                            通过可执行文件路径修复非 Snap 应用"
+    echo ""
+    echo "  sudo $(basename "$0") -i | --install-completion  Install completion / 安装补全"
+    echo "  sudo $(basename "$0") --install-service          Install systemd service / 安装系统服务"
+    echo ""
+    echo "  sudo $(basename "$0") --uninstall-service Uninstall systemd service / 卸载系统服务"
+    echo "  sudo $(basename "$0") --uninstall         Uninstall completely / 完全卸载"
+    echo ""
+    echo "Examples / 示例:"
+    echo "  $(basename "$0") -a snap-store                    # Snap app"
+    echo "  $(basename "$0") -e /usr/bin/rustdesk             # Non-Snap app"
+}
+
 # 自动安装补全（如果尚未安装且有 root 权限）
 auto_install_completion() {
     local completion_file="/etc/bash_completion.d/flutter-font-fix"
@@ -1278,6 +1661,33 @@ handle_system_commands() {
             # 也加载并挂载自定义字体配置
             mount_all_custom_fonts
             exit 0
+            ;;
+        -e|--executable)
+            check_root
+            if [ -z "$2" ]; then
+                echo "用法 / Usage: $0 -e <executable_path_or_name>"
+                echo "Example: $0 -e /usr/bin/rustdesk"
+                echo "Example: $0 -e rustdesk"
+                exit 1
+            fi
+            
+            local exe_path="$2"
+            # 如果不是绝对路径，尝试通过 which 查找
+            if [[ "$exe_path" != /* ]]; then
+                local resolved_path=$(which "$exe_path" 2>/dev/null)
+                if [[ -n "$resolved_path" ]]; then
+                    echo "[INFO] Resolved '$exe_path' to: $resolved_path"
+                    echo "       解析 '$exe_path' 为：$resolved_path"
+                    exe_path="$resolved_path"
+                else
+                    echo "[ERROR] Executable not found: $exe_path" >&2
+                    echo "        未找到可执行文件。" >&2
+                    exit 1
+                fi
+            fi
+            
+            handle_executable_app "$exe_path"
+            exit $?
             ;;
         -c|--custom)
             check_root
@@ -1325,6 +1735,13 @@ handle_system_commands() {
             install_completion
             exit 0
             ;;
+        -*)
+            # 未知选项
+            echo "[ERROR] Unknown option / 未知选项: $1" >&2
+            echo ""
+            show_usage
+            exit 1
+            ;;
     esac
 }
 
@@ -1341,35 +1758,18 @@ parse_and_execute_command() {
             -a|--app) APP_NAME="$2"; shift 2 ;;
             -l|--list) COMMAND="list"; shift ;;
             -d|--detail) COMMAND="detail"; shift ;;
+            -*) 
+                echo "[ERROR] Unknown option / 未知选项: $1" >&2
+                echo ""
+                show_usage
+                exit 1
+                ;;
             *) APP_NAME="$1"; shift ;;
         esac
     done
 
     if [ -z "$APP_NAME" ] && [[ "$COMMAND" != "list" && "$COMMAND" != "detail" ]]; then
-        echo "Usage:"
-        echo "  sudo $(basename "$0") -a <app_name>       Repair with Flutter Engine or fonts / 使用引擎修复或字体映射"
-        echo "  sudo $(basename "$0") -c <app_name>       Repair with custom fonts / 自定义字体修复"
-        echo "  sudo $(basename "$0") -r <app_name>       Remove/unmount mappings / 移除/卸载映射"
-        echo "  $(basename "$0") -l | --list              List mapped apps / 列出已映射应用"
-        echo "  $(basename "$0") -d | --detail            Detail mappings / 详细映射信息"
-        echo "  sudo $(basename "$0") --remove-all        Remove all / 移除全部"
-        echo ""
-        echo "  sudo $(basename "$0") -i | --install-completion  Install completion / 安装补全"
-        echo "  sudo $(basename "$0") --install-service   Install systemd service / 安装系统服务"
-        echo ""
-        echo "  sudo $(basename "$0") --uninstall-service Uninstall systemd service / 卸载系统服务"
-        echo "  sudo $(basename "$0") --uninstall         Uninstall completely / 完全卸载"
-        echo ""
-        echo "Global options / 全局参数:"
-        echo "  --cdn <prefix>                         Override GitHub Raw CDN prefix (with trailing slash)"
-        echo "                                         覆盖 GitHub Raw CDN 前缀(需末尾斜杠)"
-        echo ""
-        echo "Examples:"
-        echo "  $(basename "$0") --cdn https://raw.staticdn.net/ -a snap-store"
-        echo "  $(basename "$0") --cdn https://ghproxy.com/https://raw.githubusercontent.com/ -a snap-store"
-        echo ""
-        echo "Priority: Flutter Engine SO replacement > Font mapping workaround"
-        echo "优先级：Flutter 引擎 SO 替换 > 字体映射临时方案"
+        show_usage
         prompt_install_completion
         exit 1
     fi
@@ -1433,9 +1833,6 @@ if [[ "${1:-}" != "--startup" && "${1:-}" != "-i" && "${1:-}" != "--install-comp
     auto_install_completion
 fi
 
-# 初始化 GitHub 仓库对照表（首次运行时创建）
-initialize_github_repo_map
-
 # 先解析全局参数（--cdn 等），然后处理剩余的命令
 mapfile -t params < <(parse_global_params "$@")
 set -- "${params[@]}"
@@ -1444,6 +1841,13 @@ set -- "${params[@]}"
 # 包括：--startup, -c, -l, -d, --remove-all, --uninstall-service, --uninstall, --install-service, -i
 if [[ $# -gt 0 ]]; then
     handle_system_commands "$@"
+fi
+
+# 如果没有参数，显示用法并退出（不需要 root 权限）
+if [[ $# -eq 0 ]]; then
+    show_usage
+    prompt_install_completion
+    exit 1
 fi
 
 # 到此处说明是交互模式，需要 root 权限
