@@ -200,15 +200,13 @@ sudo flutter-font-fix --remove-all
 
 | 命令 | 功能说明 |
 |------|---------|
+| `sudo flutter-font-fix -e <exe>` | 修复非 Snap 应用（支持精确+相似版本）<br>Repair non-Snap apps (exact + similar versions) |
 | `sudo flutter-font-fix -a <app>` | 修复 Snap 应用（仅精确版本，回退字体映射）<br>Repair Snap apps (exact version only, fallback to font mapping) |
-| `sudo flutter-font-fix -c <app>` | 自定义字体修复<br>Repair with custom fonts |
+| `sudo flutter-font-fix -c <app>` | 自定义字体修复 Snap 应用<br>Repair Snap apps with custom fonts |
 | `sudo flutter-font-fix -r <app>` | 移除/卸载映射（包括 SO 和字体）<br>Remove/unmount mappings (SO and fonts) |
 | `flutter-font-fix -l \| --list` | 列出已映射应用<br>List mapped apps |
 | `flutter-font-fix -d \| --detail` | 详细映射信息<br>Detail mappings |
 | `sudo flutter-font-fix --remove-all` | 移除全部<br>Remove all |
-|
-| `sudo flutter-font-fix -e <exe>` | 修复非 Snap 应用（支持精确+相似版本）<br>Repair non-Snap apps (exact + similar versions) |
-|
 | `sudo flutter-font-fix --uninstall-service` | 卸载系统服务<br>Uninstall systemd service |
 | `sudo flutter-font-fix --uninstall` | 完全卸载<br>Uninstall completely |
 | `sudo flutter-font-fix -i \| --install-completion` | 安装补全<br>Install completion |
