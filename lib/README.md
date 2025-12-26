@@ -44,3 +44,12 @@ sudo flutter-font-fix -a desktop-security-center
 #        SO file: libflutter_linux_gtk.so.3.35.3
 # [OK] Root cause fixed with Flutter Engine replacement!
 ```
+## Flutter 3.38.5
+- Flutter Commit: f6ff1529fd6d8af5f706051d9251ac9231c83407
+- Built on: 2025-12-26 07:54:34 UTC
+- Size: 32M
+- Platform: Linux ARM64
+- Build Type: Release
+- Features: Fontconfig enabled
+- Built by: GitHub Actions
+
