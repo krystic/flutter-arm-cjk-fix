@@ -241,19 +241,14 @@ jobs:
         git config user.name "GitHub Actions Bot"
         git config user.email "actions@github.com"
         
-        # 先暂存所有变更
+        # 检查是否有新文件
         git add lib/
-        
-        echo "更新本地 main 分支以避免推送冲突..."
-        git fetch origin main
-        git pull --rebase origin main
-        
-        # 确认有提交内容后才提交
         if git diff --cached --quiet; then
           echo "ℹ️ 无需推送，未检测到新的变更"
           exit 0
         fi
         
+        # 先提交本地更改
         SIZE=$(du -h lib/libflutter_linux_gtk.so.$VERSION | cut -f1)
         git commit -m "chore: add Flutter Engine $VERSION with fontconfig support" \
           -m "Built from flutter/flutter@${FLUTTER_COMMIT}" \
@@ -261,6 +256,10 @@ jobs:
           -m "Linux ARM64 release build" \
           -m "Auto-built by GitHub Actions" \
           -m "Size: $SIZE"
+        
+        # 使用 --autostash 选项拉取并 rebase（自动处理未提交的内容）
+        echo "更新本地 main 分支以避免推送冲突..."
+        git pull --rebase --autostash origin main
         
         git push origin HEAD:main
         
