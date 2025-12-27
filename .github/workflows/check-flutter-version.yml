@@ -100,11 +100,11 @@ jobs:
     - name: Collect all release engine hashes
       run: |
         git ls-remote --tags --refs https://github.com/flutter/flutter.git 2>/dev/null | \
-          awk '{print $2}' |  sed 's/refs\\/tags\\///' | \
-          grep -E '^[0-9]+\\.[0-9]+\\.[0-9]+$' | sort -V -r | \
+          awk '{print $2}' |  sed 's/refs\/tags\///' | \
+          grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V -r | \
           while read tag; do
               content=$(curl -s "https://raw.githubusercontent.com/flutter/flutter/$tag/bin/internal/engine.version")
-              printf "%s | %s\\n" \"$content\" \"$tag\"
+              printf "%s | %s\n" "$content" "$tag"
           done > flutter.engine.hash.version
 
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
@@ -116,13 +116,13 @@ jobs:
           exit 0
         fi
 
-        git commit -m \"ci: update flutter.engine.hash.version (auto)\" || echo \"No changes\"
+        git commit -m "ci: update flutter.engine.hash.version (auto)"
     
         # 使用 --autostash 选项拉取并 rebase（自动处理未提交的内容）
         echo "更新本地 main 分支以避免推送冲突..."
         git pull --rebase --autostash origin main
         
-        git push origin HEAD:main || echo \"Push skipped\"
+        git push origin HEAD:main || echo "Push skipped"
 
     - name: Create issue for manual build (fallback)
       if: steps.check.outputs.build_needed == 'true' && failure()
