@@ -80,7 +80,7 @@ readelf -d libflutter_linux_gtk.so | grep fontconfig
   - **Hash 精确匹配**：通过 SO 文件中的 Engine Hash 精确识别 Flutter 版本
   - **版本缓存机制**：缓存 Flutter 版本对照表（7天），避免重复网络请求
   - **双源查找**：同时查找本地库和 GitHub 仓库，本地精确版本时自动跳过线上查询
-* 📦 **自动下载**：在线 SO 文件自动下载到本地（带进度条），支持 CDN 加速
+* 📦 **安全下载**：在线 SO 先下载到临时文件，通过仓库 `SHA256SUMS` 校验后再原子写入本地缓存，支持 CDN 加速
 * 🔄 **开机自启**：自动创建 Systemd 服务，系统重启后静默恢复所有映射
 * 🛠️ **智能管理**
   - 自动安装字体依赖（`fonts-noto-cjk`）
@@ -108,6 +108,7 @@ curl -fsSL https://raw.githubusercontent.com/krystic/flutter-arm-cjk-fix/main/in
 **功能**：
 - ✅ 自动检测 ARM64 Linux 架构（非 ARM64 会提示并退出）
 - ✅ 安装主脚本到 `/usr/local/bin/flutter-font-fix`
+- ✅ 安装功能模块到 `/usr/local/lib/flutter-font-fix/`
 - ✅ 安装必要依赖（`bash-completion`, `fonts-noto-cjk`）
 - ✅ 初始化配置目录（`/etc/flutter-cjk/`）
 - ✅ 注册并启用 systemd 服务
@@ -121,6 +122,14 @@ sudo wget https://github.com/krystic/flutter-arm-cjk-fix/raw/main/flutter-font-f
 
 # 赋予执行权限
 sudo chmod +x /usr/local/bin/flutter-font-fix
+
+# 下载功能模块
+sudo mkdir -p /usr/local/lib/flutter-font-fix
+for module in engine non-snap snap system cli; do
+  sudo wget \
+    "https://raw.githubusercontent.com/krystic/flutter-arm-cjk-fix/main/src/${module}.sh" \
+    -O "/usr/local/lib/flutter-font-fix/${module}.sh"
+done
 
 # 首次运行初始化（创建配置文件）
 sudo flutter-font-fix -l
@@ -187,6 +196,10 @@ flutter-font-fix -d
 
 # 移除映射
 sudo flutter-font-fix -r <app_name>
+
+# 恢复非 Snap 应用（名称或完整可执行文件路径）
+sudo flutter-font-fix -r rustdesk
+sudo flutter-font-fix -r /usr/bin/rustdesk
 
 # 移除全部
 sudo flutter-font-fix --remove-all
@@ -261,6 +274,8 @@ flutter-font-fix -d
 /etc/flutter-cjk/                      # 配置目录
 ├── ubuntu.conf                        # 官方模式应用列表（格式：app|so 或 app|font）
 ├── flutter.engine.hash.version        # Flutter Engine Hash→版本对照表缓存（7天）
+├── executables/                       # 非 Snap 应用修复记录
+│   └── <executable-path-sha256>.conf  # 路径、版本、备份及文件校验值
 └── <app_name>.conf                    # 自定义模式配置文件
 
 /usr/local/lib/flutter-cjk/            # SO 文件本地缓存
@@ -275,6 +290,13 @@ flutter-font-fix -d
 /usr/local/bin/
 └── flutter-font-fix                   # 主执行脚本
 
+/usr/local/lib/flutter-font-fix/        # 主程序模块
+├── engine.sh                           # Engine 版本、下载与 SHA-256 校验
+├── non-snap.sh                         # 非 Snap 替换、记录与安全恢复
+├── snap.sh                             # Snap SO 挂载与字体映射
+├── system.sh                           # 配置、服务、补全和状态管理
+└── cli.sh                              # 参数解析与命令入口
+
 <repository>/lib/                      # GitHub 仓库 SO 文件库
 └── libflutter_linux_gtk.so.X.Y.Z      # 预编译的 SO 文件（30-40MB）
 ```
@@ -285,9 +307,11 @@ flutter-font-fix -d
 ```
 snap-store|so              # SO 引擎替换
 desktop-security-center|font   # 字体映射
-rustdesk|so                # 非 Snap 应用也记录在此
 old-app                    # 旧格式（兼容）
 ```
+
+> `ubuntu.conf` 仅记录 Snap 应用。非 Snap 应用使用
+> `executables/` 下的独立记录，避免同名可执行文件和包含空格的路径发生冲突。
 
 **flutter.engine.hash.version** - Flutter Engine Hash→版本缓存
 ```bash
@@ -316,9 +340,13 @@ a7f8e9d2c3... | 3.24.3
 2. **双源查找**：本地优先，精确版本时跳过线上查询，自动下载在线版本（30-40MB，进度条）
 3. **智能替换**：
    - Snap 应用：`mount --bind` 替换（仅精确版本）
-   - 非 Snap 应用：直接替换系统 SO（支持相似版本，自动备份 `.bak`）
+   - 非 Snap 应用：直接替换系统 SO（支持相似版本，自动备份 `.bak`），并持久化记录原始与替换版本、路径和 SHA-256
 4. **字体映射兜底**：无匹配 SO 时自动回退到 Noto CJK 字体映射
 5. **开机自启**：Systemd 服务 `After=snapd.service` 确保 Snap 就绪后执行
+
+下载在线 SO 时，工具会先获取 `lib/SHA256SUMS`，确认目标文件存在有效的
+SHA-256 条目，再下载到临时文件。只有实际摘要与清单完全一致时才会原子移动到
+`/usr/local/lib/flutter-cjk/`；清单缺失、条目无效或摘要不匹配都会终止操作并删除临时文件。
 
 ### 检测流程示例
 ```bash
@@ -379,12 +407,18 @@ WantedBy=multi-user.target
 
 **Q: 如何恢复原始 SO 文件？**
 ```bash
-# 非 Snap 应用（-e 模式）会自动备份
-sudo cp /path/to/libflutter_linux_gtk.so.bak /path/to/libflutter_linux_gtk.so
+# 非 Snap 应用：校验当前文件和备份后安全恢复
+sudo flutter-font-fix -r rustdesk
+# 同名程序较多时可指定完整路径
+sudo flutter-font-fix -r /usr/bin/rustdesk
 
 # Snap 应用（-a 模式）使用 mount，直接卸载即可
 sudo flutter-font-fix -r snap-store
 ```
+
+如果当前 SO 在修复后被应用升级或其他程序修改，工具会拒绝用旧备份覆盖，
+保留修复记录并提示人工检查。`--remove-all` 会恢复全部非 Snap 应用；
+`--uninstall` 在任何非 Snap 应用无法安全恢复时会中止，以免删除恢复依据。
 
 **Q: 修复后需要重启应用吗？**
 - 通常不需要。映射立即生效，但部分应用可能需要重启以重新加载字体缓存
@@ -455,6 +489,56 @@ ls -la /path/to/libflutter_linux_gtk.so*
    ```bash
    sudo flutter-font-fix -i
    ```
+
+---
+
+## 🧪 开发与测试
+
+主脚本可以被安全地 `source`：只有直接执行时才进入 CLI 主函数。测试可通过
+以下环境变量把所有路径切换到临时目录：
+
+- `FLUTTER_CJK_CONFIG_DIR`
+- `FLUTTER_CJK_SO_LIB_DIR`
+- `FLUTTER_CJK_SNAP_ROOT`
+- `FLUTTER_CJK_NOTO_DIR`
+- `FLUTTER_CJK_SERVICE_FILE`
+
+安装时设置 `FLUTTER_CJK_TARGET_MODULE_DIR` 或 `FLUTTER_CJK_SO_LIB_DIR` 后，
+安装器会将实际路径记录在程序旁的 `.paths` 文件中；后续运行和卸载会自动使用
+这些路径，无需再次传入环境变量。运行时显式设置环境变量仍可临时覆盖记录值。
+
+测试尚未合并的远程分支时，可在安装阶段设置
+`FLUTTER_CJK_REPO_REF=<branch>`。安装器会将分支名一并写入 `.paths`，使入口、
+模块、版本映射、SO 文件、SHA-256 清单和 GitHub API 版本查询始终使用同一分支。
+未设置时默认使用 `main`。
+
+本地运行质量检查：
+
+```bash
+bash -n flutter-font-fix install.sh src/*.sh tests/run-tests.sh
+shellcheck flutter-font-fix install.sh src/*.sh tests/run-tests.sh
+bash tests/run-tests.sh
+```
+
+测试使用临时目录和模拟的 `curl`，不会修改 `/etc`、`/usr/local`、`/snap`，
+也不会执行真实的挂载或 systemd 操作。GitHub Actions 的 `quality.yml`
+会在相关文件变化时自动运行相同检查。
+
+### 源码模块
+
+仓库中的 `flutter-font-fix` 是轻量入口和模块加载器，实际功能位于 `src/`：
+
+| 模块 | 职责 |
+|------|------|
+| `engine.sh` | Engine Hash 解析、版本匹配、在线查询、下载与摘要校验 |
+| `non-snap.sh` | 非 Snap SO 替换、持久化记录和安全恢复 |
+| `snap.sh` | Snap Engine bind mount、字体映射及卸载 |
+| `system.sh` | systemd、配置、补全、列表和自定义字体 |
+| `cli.sh` | CLI 帮助、参数解析和主入口 |
+
+本地运行时入口从同级 `src/` 加载模块；安装后从
+`/usr/local/lib/flutter-font-fix/` 加载。缺少任何模块都会明确报错并停止，
+不会在功能不完整的状态下继续运行。
 
 ---
 

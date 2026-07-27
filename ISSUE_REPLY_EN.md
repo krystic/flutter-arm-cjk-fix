@@ -12,8 +12,8 @@ Project repository: 👉 **https://github.com/krystic/flutter-arm-cjk-fix**
 - Solution 2 (Fallback, temporary fix): Use `mount --bind` to map system Noto Sans CJK fonts to the app's font directory.
 
 **Available Versions (Linux ARM64)**
-- Currently available: `3.24.3`, `3.32.7`, `3.35.3`, `3.38.1` (all with `fontconfig` enabled)
-- Building automatically: `3.38.5` (Actions will trigger build and release upon detecting new tags)
+- Prebuilt versions are maintained in the repository's `lib/` directory and GitHub Releases.
+- The scheduled Actions workflow detects new stable Flutter tags and triggers missing builds automatically.
 
 **Quick Start**
 1) One-command installation (recommended, auto-detects ARM64 architecture and completes setup):

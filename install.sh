@@ -4,10 +4,14 @@ set -euo pipefail
 # flutter-arm-cjk-fix installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/krystic/flutter-arm-cjk-fix/main/install.sh | sudo bash
 
-REPO_RAW="https://raw.githubusercontent.com/krystic/flutter-arm-cjk-fix/main"
-TARGET_BIN="/usr/local/bin/flutter-font-fix"
-CONFIG_DIR="/etc/flutter-cjk"
-SERVICE_FILE="/etc/systemd/system/flutter-font-fix.service"
+REPO_REF="${FLUTTER_CJK_REPO_REF:-main}"
+REPO_RAW="${FLUTTER_CJK_REPO_RAW:-https://raw.githubusercontent.com/krystic/flutter-arm-cjk-fix/$REPO_REF}"
+TARGET_BIN="${FLUTTER_CJK_TARGET_BIN:-/usr/local/bin/flutter-font-fix}"
+TARGET_MODULE_DIR="${FLUTTER_CJK_TARGET_MODULE_DIR:-/usr/local/lib/flutter-font-fix}"
+SO_LIB_DIR="${FLUTTER_CJK_SO_LIB_DIR:-/usr/local/lib/flutter-cjk}"
+TARGET_PATHS_FILE="${TARGET_BIN}.paths"
+CONFIG_DIR="${FLUTTER_CJK_CONFIG_DIR:-/etc/flutter-cjk}"
+SERVICE_FILE="${FLUTTER_CJK_SERVICE_FILE:-/etc/systemd/system/flutter-font-fix.service}"
 
 log() { printf "[INST] %s\n" "$*"; }
 warn() { printf "[warn] %s\n" "$*"; }
@@ -75,32 +79,86 @@ install_binary() {
     curl -fsSL "$REPO_RAW/flutter-font-fix" -o "$TARGET_BIN"
   fi
   chmod +x "$TARGET_BIN"
+  printf 'module_dir=%s\nso_lib_dir=%s\nrepo_ref=%s\n' \
+    "$TARGET_MODULE_DIR" "$SO_LIB_DIR" "$REPO_REF" > "$TARGET_PATHS_FILE"
+  chmod 644 "$TARGET_PATHS_FILE"
+}
+
+install_modules() {
+  local modules=(engine non-snap snap system cli)
+  local module parent_dir staging_dir backup_dir=""
+  parent_dir=$(dirname "$TARGET_MODULE_DIR")
+  mkdir -p "$parent_dir"
+  staging_dir=$(mktemp -d "${TARGET_MODULE_DIR}.tmp.XXXXXX")
+
+  if [[ -f "./flutter-font-fix" && -d "./src" ]]; then
+    log "Installing local modules to $TARGET_MODULE_DIR"
+    echo "       安装本地程序模块到 $TARGET_MODULE_DIR"
+    for module in "${modules[@]}"; do
+      if ! cp "./src/$module.sh" "$staging_dir/$module.sh"; then
+        rm -rf "$staging_dir"
+        return 1
+      fi
+    done
+  else
+    log "Downloading program modules to $TARGET_MODULE_DIR"
+    echo "       下载程序模块到 $TARGET_MODULE_DIR"
+    for module in "${modules[@]}"; do
+      if ! curl -fsSL "$REPO_RAW/src/$module.sh" -o "$staging_dir/$module.sh"; then
+        rm -rf "$staging_dir"
+        return 1
+      fi
+    done
+  fi
+
+  if ! bash -n "$staging_dir"/*.sh; then
+    err "Downloaded modules failed Bash syntax validation."
+    rm -rf "$staging_dir"
+    return 1
+  fi
+  chmod 644 "$staging_dir"/*.sh
+
+  if [[ -e "$TARGET_MODULE_DIR" ]]; then
+    backup_dir="${staging_dir}.backup"
+    if ! mv "$TARGET_MODULE_DIR" "$backup_dir"; then
+      rm -rf "$staging_dir"
+      return 1
+    fi
+  fi
+
+  if ! mv "$staging_dir" "$TARGET_MODULE_DIR"; then
+    [[ -n "$backup_dir" ]] && mv "$backup_dir" "$TARGET_MODULE_DIR"
+    rm -rf "$staging_dir"
+    return 1
+  fi
+  if [[ -n "$backup_dir" ]]; then
+    rm -rf "$backup_dir"
+  fi
 }
 
 init_config() {
   mkdir -p "$CONFIG_DIR"
+  mkdir -p "$CONFIG_DIR/executables"
+  # 清理由旧版仓库映射方案遗留、当前已不再使用的配置文件
+  rm -f "$CONFIG_DIR/github-repos.conf" "$CONFIG_DIR/flutter-versions.cache"
   # 官方映射配置（应用列表与方法）
   [[ -f "$CONFIG_DIR/ubuntu.conf" ]] || touch "$CONFIG_DIR/ubuntu.conf"
-  # GitHub 仓库映射（示例复制为默认）
-  if [[ ! -f "$CONFIG_DIR/github-repos.conf" ]]; then
-    if [[ -f ./github-repos.conf.example ]]; then
-      cp ./github-repos.conf.example "$CONFIG_DIR/github-repos.conf"
-    else
-      curl -fsSL "$REPO_RAW/github-repos.conf.example" -o "$CONFIG_DIR/github-repos.conf" || true
-    fi
-  fi
-  # 版本缓存（自动检测加速）
-  [[ -f "$CONFIG_DIR/flutter-versions.cache" ]] || touch "$CONFIG_DIR/flutter-versions.cache"
 }
 
 init_so_dir() {
-  local SO_DIR="/usr/local/lib/flutter-cjk"
+  local SO_DIR="$SO_LIB_DIR"
   mkdir -p "$SO_DIR"
   # 如本地仓库已有预编译 SO，复制到系统 SO 目录
   if [[ -d ./lib ]]; then
     log "Copying local lib/ SO files into system directory..."
     echo "       复制本地 lib/ 目录中的 SO 到系统目录..."
     cp -v ./lib/libflutter_linux_gtk.so.* "$SO_DIR/" 2>/dev/null || true
+    if [[ -f ./lib/SHA256SUMS ]]; then
+      cp ./lib/SHA256SUMS "$SO_DIR/SHA256SUMS"
+      log "Verifying copied SO files with SHA256SUMS..."
+      echo "       正在使用 SHA256SUMS 校验复制的 SO 文件..."
+      (cd "$SO_DIR" && sha256sum -c SHA256SUMS)
+    fi
   fi
 }
 
@@ -115,6 +173,8 @@ print_summary() {
   echo
   log "Installation completed / 安装完成!"
   echo "- 程序 / Binary:         $TARGET_BIN"
+  echo "- 模块 / Modules:        $TARGET_MODULE_DIR"
+  echo "- SO 库 / SO libraries:  $SO_LIB_DIR"
   echo "- 配置 / Config dir:     $CONFIG_DIR"
   echo "- 服务 / Service file:   $SERVICE_FILE"
   echo
@@ -139,6 +199,7 @@ main() {
   require_root
   check_platform
   install_dependencies
+  install_modules
   install_binary
   init_config
   init_so_dir
@@ -146,4 +207,6 @@ main() {
   print_summary
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
