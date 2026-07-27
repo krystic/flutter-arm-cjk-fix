@@ -5,6 +5,7 @@ CONFIG_DIR="${FLUTTER_CJK_CONFIG_DIR:-/etc/flutter-cjk}"
 CONFIG_FILE="$CONFIG_DIR/ubuntu.conf"
 NON_SNAP_CONFIG_DIR="$CONFIG_DIR/executables"
 SERVICE_FILE="${FLUTTER_CJK_SERVICE_FILE:-/etc/systemd/system/flutter-font-fix.service}"
+COMPLETION_FILE="${FLUTTER_CJK_COMPLETION_FILE:-/etc/bash_completion.d/flutter-font-fix}"
 SCRIPT_PATH=$(realpath "${BASH_SOURCE[0]}")
 INSTALL_PATHS_FILE="${SCRIPT_PATH}.paths"
 

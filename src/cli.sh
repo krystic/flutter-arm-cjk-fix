@@ -24,8 +24,7 @@ show_usage() {
 
 # 自动安装补全（如果尚未安装且有 root 权限）
 auto_install_completion() {
-    local completion_file="/etc/bash_completion.d/flutter-font-fix"
-    if [[ ! -f "$completion_file" ]] && [[ $EUID -eq 0 ]]; then
+    if [[ ! -f "$COMPLETION_FILE" ]] && [[ $EUID -eq 0 ]]; then
         echo ""
         echo "[INFO] Shell completion not found, installing..."
         echo "       未找到补全脚本，正在安装..."

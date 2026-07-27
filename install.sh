@@ -116,6 +116,7 @@ install_modules() {
     rm -rf "$staging_dir"
     return 1
   fi
+  chmod 755 "$staging_dir"
   chmod 644 "$staging_dir"/*.sh
 
   if [[ -e "$TARGET_MODULE_DIR" ]]; then

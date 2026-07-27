@@ -75,9 +75,8 @@ do_uninstall() {
     echo "[*] Unmounting all replacements..."
     echo "    卸载所有挂载和映射..."
     if ! do_unmount_all; then
-        echo "[ERROR] Some non-Snap applications could not be restored." >&2
-        echo "        部分非 Snap 应用无法安全恢复。已停止卸载并保留程序与配置。" >&2
-        return 1
+        echo "[WARN] Some applications could not be restored; continuing uninstall." >&2
+        echo "       部分应用无法恢复，将跳过这些应用并继续卸载。" >&2
     fi
     
     # 2. 删除 SO 库目录
@@ -95,10 +94,10 @@ do_uninstall() {
     fi
     
     # 4. 删除 bash completion 文件
-    if [ -f "/etc/bash_completion.d/flutter-font-fix" ]; then
-        echo "[*] Removing bash completion: /etc/bash_completion.d/flutter-font-fix"
+    if [ -f "$COMPLETION_FILE" ]; then
+        echo "[*] Removing bash completion: $COMPLETION_FILE"
         echo "    删除 bash 补全文件"
-        rm -f "/etc/bash_completion.d/flutter-font-fix"
+        rm -f "$COMPLETION_FILE"
     fi
     
     # 5. 停止并删除 systemd 服务
@@ -184,7 +183,7 @@ do_unmount_all() {
 
 install_completion() {
     check_root
-    local FILE="/etc/bash_completion.d/flutter-font-fix"
+    local FILE="$COMPLETION_FILE"
     cat > "$FILE" <<'EOF'
 # bash completion for flutter-font-fix
 _flutter_font_fix_completion() {

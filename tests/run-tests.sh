@@ -22,6 +22,14 @@ assert_file_missing() {
     [[ ! -e "$1" ]] || fail "expected path to be absent: $1"
 }
 
+assert_mode() {
+    local expected=$1 path=$2
+    local actual
+    actual=$(stat -c '%a' "$path")
+    [[ "$actual" == "$expected" ]] ||
+        fail "unexpected mode for $path (expected '$expected', got '$actual')"
+}
+
 run_test() {
     local name=$1
     shift
@@ -43,6 +51,7 @@ with_fixture() {
         export FLUTTER_CJK_SNAP_ROOT="$fixture_root/snap"
         export FLUTTER_CJK_NOTO_DIR="$fixture_root/noto"
         export FLUTTER_CJK_SERVICE_FILE="$fixture_root/flutter-font-fix.service"
+        export FLUTTER_CJK_COMPLETION_FILE="$fixture_root/flutter-font-fix.completion"
         export FIXTURE_ROOT="$fixture_root"
         # shellcheck source=../flutter-font-fix
         source "$PROJECT_DIR/flutter-font-fix"
@@ -293,8 +302,10 @@ test_installer_deploys_local_modules() {
     )
 
     local module
+    assert_mode 755 "$FLUTTER_CJK_TARGET_MODULE_DIR"
     for module in engine non-snap snap system cli; do
         assert_file_exists "$FLUTTER_CJK_TARGET_MODULE_DIR/$module.sh"
+        assert_mode 644 "$FLUTTER_CJK_TARGET_MODULE_DIR/$module.sh"
     done
 
     assert_file_exists "${FLUTTER_CJK_TARGET_BIN}.paths"
@@ -427,6 +438,40 @@ test_entrypoint_rejects_incomplete_module_set() {
     [[ "$output" == *"Required module not found"* ]]
 }
 
+test_uninstall_continues_after_restore_failure() {
+    local uninstall_root="$FIXTURE_ROOT/uninstall"
+    mkdir -p \
+        "$uninstall_root/bin" \
+        "$uninstall_root/modules" \
+        "$uninstall_root/cache" \
+        "$uninstall_root/config"
+
+    SCRIPT_PATH="$uninstall_root/bin/flutter-font-fix"
+    INSTALL_PATHS_FILE="${SCRIPT_PATH}.paths"
+    INSTALLED_MODULE_DIR="$uninstall_root/modules"
+    SO_LIB_DIR="$uninstall_root/cache"
+    CONFIG_DIR="$uninstall_root/config"
+    SERVICE_FILE="$uninstall_root/flutter-font-fix.service"
+    printf 'entrypoint' > "$SCRIPT_PATH"
+    printf 'paths' > "$INSTALL_PATHS_FILE"
+    printf 'service' > "$SERVICE_FILE"
+
+    do_unmount_all() { return 1; }
+    remove_system_service() {
+        rm -f "$SERVICE_FILE"
+        printf 'called' > "$uninstall_root/service-removed"
+    }
+
+    do_uninstall >/dev/null 2>&1
+
+    assert_file_missing "$SCRIPT_PATH"
+    assert_file_missing "$INSTALL_PATHS_FILE"
+    assert_file_missing "$INSTALLED_MODULE_DIR"
+    assert_file_missing "$SO_LIB_DIR"
+    assert_file_missing "$CONFIG_DIR"
+    assert_file_exists "$uninstall_root/service-removed"
+}
+
 run_test "sourcing the main script has no side effects" \
     with_fixture test_source_has_no_side_effects
 run_test "non-Snap restore succeeds and cleans state" \
@@ -461,5 +506,7 @@ run_test "failed module download preserves the installed module set" \
     with_fixture test_installer_failed_download_preserves_existing_modules
 run_test "entrypoint rejects an incomplete module set" \
     with_fixture test_entrypoint_rejects_incomplete_module_set
+run_test "uninstall continues when an application cannot be restored" \
+    with_fixture test_uninstall_continues_after_restore_failure
 
 echo "1..$TEST_COUNT"
