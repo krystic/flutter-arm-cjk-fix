@@ -1,0 +1,41 @@
+name: Shell Quality
+
+on:
+  push:
+    paths:
+      - 'flutter-font-fix'
+      - 'src/**'
+      - 'install.sh'
+      - 'tests/**'
+      - '.shellcheckrc'
+      - '.github/workflows/quality.yml'
+  pull_request:
+    paths:
+      - 'flutter-font-fix'
+      - 'src/**'
+      - 'install.sh'
+      - 'tests/**'
+      - '.shellcheckrc'
+      - '.github/workflows/quality.yml'
+  workflow_dispatch:
+
+jobs:
+  shell-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Check shell syntax
+        run: bash -n flutter-font-fix install.sh src/*.sh tests/run-tests.sh
+
+      - name: Run ShellCheck
+        run: shellcheck flutter-font-fix install.sh src/*.sh tests/run-tests.sh
+
+      - name: Run simulated Bash tests
+        run: bash tests/run-tests.sh

@@ -271,12 +271,21 @@ jobs:
           readelf -d "$SO_DEST" | head -20
           exit 1
         fi
+
+        echo "生成并验证 SHA256 清单："
+        (
+          cd lib
+          sha256sum libflutter_linux_gtk.so.* | sort -V -k2 > SHA256SUMS
+          sha256sum -c SHA256SUMS
+        )
     
     - name: Upload SO file as artifact
       uses: actions/upload-artifact@v4
       with:
         name: libflutter_linux_gtk.so.${{ steps.set-vars.outputs.flutter_version }}
-        path: lib/libflutter_linux_gtk.so.${{ steps.set-vars.outputs.flutter_version }}
+        path: |
+          lib/libflutter_linux_gtk.so.${{ steps.set-vars.outputs.flutter_version }}
+          lib/SHA256SUMS
         retention-days: 30
     
     - name: Update lib README
@@ -348,6 +357,7 @@ jobs:
           
           ### 📦 What's Included
           - `libflutter_linux_gtk.so.${{ steps.set-vars.outputs.flutter_version }}` - Flutter Engine shared library
+          - `SHA256SUMS` - SHA-256 checksum manifest
           
           ### ✅ Verification
           This build includes fontconfig support, verified by:
@@ -372,6 +382,7 @@ jobs:
           **Auto-built by GitHub Actions** on $(date -u '+%Y-%m-%d')
         files: |
           lib/libflutter_linux_gtk.so.${{ steps.set-vars.outputs.flutter_version }}
+          lib/SHA256SUMS
         draft: false
         prerelease: false
       env:

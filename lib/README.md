@@ -2,27 +2,32 @@
 
 This directory contains custom-compiled Flutter Engine shared libraries that fix the fontconfig issue on ARM64 Linux systems.
 
+`SHA256SUMS` contains the SHA-256 digest for every prebuilt Engine in this
+directory. The client refuses newly downloaded files that are missing from the
+manifest or fail checksum verification.
+
 ## Available Versions
 
 - `libflutter_linux_gtk.so.X.Y.Z` - Compiled with fontconfig support for Flutter X.Y.Z
   - Fixes: Root cause of CJK character rendering on ARM64
-  - Auto-detected from app source code (.fvmrc)
+  - Matched using the Flutter Engine hash embedded in the app's shared library
 
 ## Usage
 
 The `flutter-font-fix` script automatically:
-1. Detects the app's Flutter version from GitHub source (.fvmrc)
-2. Checks if a matching SO file exists in this directory
-3. Mounts the SO file to replace the official one
+1. Extracts the 40-character Engine hash from the app's `libflutter_linux_gtk.so`
+2. Resolves the hash through `flutter.engine.hash.version`
+3. Checks if a matching SO file exists locally or in this repository
+4. Mounts the SO file to replace the official one
 
 No manual version mapping needed!
 
 ## Build Information
 
 These libraries were compiled from Flutter Engine source with the following modifications:
-- `flutter_use_fontconfig = true` in args.gn
+- `--enable-fontconfig` passed to `flutter/tools/gn`
 - Target: linux-arm64
-- Mode: debug/profile/release
+- Mode: release
 
 For build instructions, see `../FONTCONFIG_BUG_INVESTIGATION.md`
 
@@ -36,9 +41,7 @@ lib/libflutter_linux_gtk.so.3.35.3
 sudo flutter-font-fix -a desktop-security-center
 
 # Output:
-# [INFO] Auto-detecting Flutter version...
-#        Repository: https://github.com/canonical/desktop-security-center
-#        Commit: d93b42d
+# [INFO] Auto-detecting Flutter version from Engine hash...
 #        Flutter version: 3.35.3
 # [INFO] Found matching SO file!
 #        SO file: libflutter_linux_gtk.so.3.35.3
@@ -302,8 +305,6 @@ sudo flutter-font-fix -a desktop-security-center
 - Build Type: Release
 - Features: Fontconfig enabled
 - Built by: GitHub Actions
-
-
 ## Flutter 3.38.3
 - Flutter Commit: 13e658725ddaa270601426d1485636157e38c34c
 - Built on: 2026-07-26 12:50:16 UTC
@@ -312,4 +313,3 @@ sudo flutter-font-fix -a desktop-security-center
 - Build Type: Release
 - Features: Fontconfig enabled
 - Built by: GitHub Actions
-

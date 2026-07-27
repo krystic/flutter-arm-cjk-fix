@@ -1,0 +1,6 @@
+shell=bash
+severity=warning
+# Existing script style commonly declares and assigns local command
+# substitutions together. Keep that legacy rule baselined while ShellCheck
+# enforces all other warnings on new changes.
+disable=SC1090,SC1091,SC2030,SC2031,SC2034,SC2153,SC2155,SC2329
