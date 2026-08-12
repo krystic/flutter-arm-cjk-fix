@@ -6,6 +6,14 @@ This directory contains custom-compiled Flutter Engine shared libraries that fix
 directory. The client refuses newly downloaded files that are missing from the
 manifest or fail checksum verification.
 
+Flutter has merged the upstream fix in
+[flutter/flutter#180235](https://github.com/flutter/flutter/pull/180235). From
+the expected stable release Flutter 3.50.0 onward, the official ARM64 Linux
+Desktop Engine should already include Fontconfig support. `flutter-font-fix`
+therefore skips SO replacement and font mapping for Flutter 3.50.0 or newer.
+This directory is only needed for older Flutter versions that still ship without
+the official fix.
+
 ## Available Versions
 
 - `libflutter_linux_gtk.so.X.Y.Z` - Compiled with fontconfig support for Flutter X.Y.Z
@@ -17,8 +25,9 @@ manifest or fail checksum verification.
 The `flutter-font-fix` script automatically:
 1. Extracts the 40-character Engine hash from the app's `libflutter_linux_gtk.so`
 2. Resolves the hash through `flutter.engine.hash.version`
-3. Checks if a matching SO file exists locally or in this repository
-4. Mounts the SO file to replace the official one
+3. Skips repair if the detected Flutter version is 3.50.0 or newer
+4. Checks if a matching SO file exists locally or in this repository for older versions
+5. Mounts the SO file to replace the official one
 
 No manual version mapping needed!
 

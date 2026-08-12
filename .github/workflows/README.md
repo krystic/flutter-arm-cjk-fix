@@ -29,11 +29,17 @@
 
 1. 从 `flutter/flutter` 的稳定版 Git Tag 中确定最新版本；
 2. 解析该 Tag 对应的 Flutter 提交；
-3. 检查 `lib/libflutter_linux_gtk.so.<version>` 是否已经存在；
-4. 缺少时通过 `repository_dispatch` 触发构建工作流；
-5. 遍历稳定版 Tag，读取 `bin/internal/engine.version`，重新生成
+3. 如果版本为 Flutter 3.50.0 或更新版本，认为官方 ARM64 Linux Desktop
+   Fontconfig 修复已经可用，不再自动构建自定义 SO；
+4. 对 Flutter 3.50.0 之前的版本，检查
+   `lib/libflutter_linux_gtk.so.<version>` 是否已经存在；
+5. 缺少时通过 `repository_dispatch` 触发构建工作流；
+6. 遍历稳定版 Tag，读取 `bin/internal/engine.version`，重新生成
    `flutter.engine.hash.version`；
-6. 自动提交版本映射变化；工作流失败时创建 Issue 供维护者处理。
+7. 自动提交版本映射变化；工作流失败时创建 Issue 供维护者处理。
+
+注意：即使 Flutter 3.50.0 之后不再自动构建 SO，版本检查工作流仍会维护
+`flutter.engine.hash.version`。运行时需要这个映射来识别 3.50.0+ 应用并安全跳过修复。
 
 ### 3. 构建 Flutter Engine
 

@@ -87,6 +87,22 @@ test_source_has_no_side_effects() {
     [[ ! -e "$CONFIG_DIR" ]]
 }
 
+test_official_fix_version_comparison() {
+    version_ge 3.50.0 3.50.0
+    version_ge 3.50.1 3.50.0
+    version_ge 3.51.0 3.50.0
+    if version_ge 3.49.9 3.50.0; then
+        return 1
+    fi
+    if version_ge 3.9.9 3.50.0; then
+        return 1
+    fi
+    is_official_fontconfig_fixed_version 3.50.0
+    if is_official_fontconfig_fixed_version 3.49.9; then
+        return 1
+    fi
+}
+
 test_non_snap_restore_success() {
     local exe record so backup
     exe=$(create_non_snap_record_fixture "My App")
@@ -220,15 +236,15 @@ test_cached_so_is_reverified() {
 test_snap_real_path_rejects_tampered_cached_so() {
     local app="tampered-app"
     local target_dir="$SNAP_ROOT/$app/current/lib"
-    local cached_so="$SO_LIB_DIR/libflutter_linux_gtk.so.9.9.9"
+    local cached_so="$SO_LIB_DIR/libflutter_linux_gtk.so.3.49.9"
     local mount_marker="$FIXTURE_ROOT/engine-mounted"
     mkdir -p "$target_dir" "$SO_LIB_DIR"
     printf 'application-engine' > "$target_dir/libflutter_linux_gtk.so"
     printf 'tampered-cache' > "$cached_so"
     printf '%064d  %s\n' 0 "${cached_so##*/}" > "$SO_LIB_DIR/SHA256SUMS"
 
-    detect_flutter_version_from_so() { echo 9.9.9; }
-    find_all_available_versions() { echo "9.9.9|local|true"; }
+    detect_flutter_version_from_so() { echo 3.49.9; }
+    find_all_available_versions() { echo "3.49.9|local|true"; }
     mount_so_replacement() {
         : > "$mount_marker"
         return 0
@@ -241,10 +257,36 @@ test_snap_real_path_rejects_tampered_cached_so() {
     assert_file_missing "$mount_marker"
 }
 
+test_snap_official_fixed_version_skips_repair() {
+    local app="fixed-app"
+    local snap_path="$SNAP_ROOT/$app/current"
+    local marker="$FIXTURE_ROOT/unexpected-call"
+    mkdir -p "$snap_path"
+
+    detect_flutter_version_from_so() { echo 3.50.0; }
+    find_all_available_versions() {
+        : > "$marker"
+        return 1
+    }
+    mount_so_replacement() {
+        : > "$marker"
+        return 1
+    }
+    setup_system_service() {
+        : > "$marker"
+        return 1
+    }
+
+    do_mount "$app" false >/dev/null
+
+    assert_file_missing "$marker"
+    assert_file_missing "$CONFIG_FILE"
+}
+
 test_non_snap_real_path_rejects_tampered_cached_so() {
     local exe="$FIXTURE_ROOT/demo-executable"
     local target_so="$FIXTURE_ROOT/application.so"
-    local cached_so="$SO_LIB_DIR/libflutter_linux_gtk.so.9.9.9"
+    local cached_so="$SO_LIB_DIR/libflutter_linux_gtk.so.3.49.9"
     mkdir -p "$SO_LIB_DIR"
     printf 'executable' > "$exe"
     chmod +x "$exe"
@@ -255,8 +297,8 @@ test_non_snap_real_path_rejects_tampered_cached_so() {
     get_so_path_from_executable() { echo "$target_so"; }
     extract_engine_hash_from_so() { printf '%040d\n' 0; }
     update_flutter_hash_version_cache() { return 0; }
-    find_flutter_version_by_hash() { echo 9.9.9; }
-    find_all_available_versions() { echo "9.9.9|local|true"; }
+    find_flutter_version_by_hash() { echo 3.49.9; }
+    find_all_available_versions() { echo "3.49.9|local|true"; }
     export FLUTTER_CJK_DISABLE_SO_DOWNLOAD=1
 
     if handle_executable_app "$exe" >/dev/null 2>&1; then
@@ -264,6 +306,32 @@ test_non_snap_real_path_rejects_tampered_cached_so() {
     fi
     assert_eq "original-engine" "$(<"$target_so")" \
         "non-Snap target must not be replaced with an unverified cache"
+}
+
+test_non_snap_official_fixed_version_skips_replacement() {
+    local exe="$FIXTURE_ROOT/fixed-executable"
+    local target_so="$FIXTURE_ROOT/fixed-application.so"
+    local marker="$FIXTURE_ROOT/unexpected-call"
+    printf 'executable' > "$exe"
+    chmod +x "$exe"
+    printf 'official-engine' > "$target_so"
+
+    get_so_path_from_executable() { echo "$target_so"; }
+    extract_engine_hash_from_so() { printf '%040d\n' 0; }
+    update_flutter_hash_version_cache() { return 0; }
+    find_flutter_version_by_hash() { echo 3.50.0; }
+    find_all_available_versions() {
+        : > "$marker"
+        return 1
+    }
+
+    handle_executable_app "$exe" >/dev/null
+
+    assert_eq "official-engine" "$(<"$target_so")" \
+        "officially fixed non-Snap SO must not be replaced"
+    assert_file_missing "$target_so.bak"
+    assert_file_missing "$marker"
+    [[ ! -d "$NON_SNAP_CONFIG_DIR" ]] || ! find "$NON_SNAP_CONFIG_DIR" -type f | grep -q .
 }
 
 test_snap_so_mount_uses_test_root() {
@@ -474,6 +542,8 @@ test_uninstall_continues_after_restore_failure() {
 
 run_test "sourcing the main script has no side effects" \
     with_fixture test_source_has_no_side_effects
+run_test "official fix version comparison is numeric" \
+    with_fixture test_official_fix_version_comparison
 run_test "non-Snap restore succeeds and cleans state" \
     with_fixture test_non_snap_restore_success
 run_test "non-Snap restore rejects a modified current SO" \
@@ -492,8 +562,12 @@ run_test "cached SO files are reverified" \
     with_fixture test_cached_so_is_reverified
 run_test "Snap real selection rejects a tampered cached SO" \
     with_fixture test_snap_real_path_rejects_tampered_cached_so
+run_test "Snap skips repair for officially fixed Flutter versions" \
+    with_fixture test_snap_official_fixed_version_skips_repair
 run_test "non-Snap real selection rejects a tampered cached SO" \
     with_fixture test_non_snap_real_path_rejects_tampered_cached_so
+run_test "non-Snap skips replacement for officially fixed Flutter versions" \
+    with_fixture test_non_snap_official_fixed_version_skips_replacement
 run_test "Snap SO mounting is simulated under the test root" \
     with_fixture test_snap_so_mount_uses_test_root
 run_test "installer deploys all local modules" \

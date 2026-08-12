@@ -95,6 +95,32 @@ jobs:
           RESOLVED_TAG_COMMIT="$object_sha"
         }
 
+        version_ge() {
+          local version="$1"
+          local minimum="$2"
+          local version_major version_minor version_patch
+          local minimum_major minimum_minor minimum_patch
+
+          IFS=. read -r version_major version_minor version_patch <<< "$version"
+          IFS=. read -r minimum_major minimum_minor minimum_patch <<< "$minimum"
+
+          [[ "$version_major" =~ ^[0-9]+$ && "$version_minor" =~ ^[0-9]+$ && "${version_patch:-}" =~ ^[0-9]+$ ]] || return 1
+          [[ "$minimum_major" =~ ^[0-9]+$ && "$minimum_minor" =~ ^[0-9]+$ && "${minimum_patch:-}" =~ ^[0-9]+$ ]] || return 1
+
+          version_major=$((10#$version_major))
+          version_minor=$((10#$version_minor))
+          version_patch=$((10#$version_patch))
+          minimum_major=$((10#$minimum_major))
+          minimum_minor=$((10#$minimum_minor))
+          minimum_patch=$((10#$minimum_patch))
+
+          (( version_major > minimum_major )) && return 0
+          (( version_major < minimum_major )) && return 1
+          (( version_minor > minimum_minor )) && return 0
+          (( version_minor < minimum_minor )) && return 1
+          (( version_patch >= minimum_patch ))
+        }
+
         echo "正在检查 Flutter Engine 最新版本（从 Git tags）..."
 
         echo "从 Git 仓库直接获取最新 stable tag..."
@@ -126,6 +152,13 @@ jobs:
         
         echo "latest_version=$FLUTTER_VERSION" >> $GITHUB_OUTPUT
         echo "flutter_commit=$FLUTTER_COMMIT_SHA" >> $GITHUB_OUTPUT
+
+        OFFICIAL_FIX_MIN_VERSION="3.50.0"
+        if version_ge "$FLUTTER_VERSION" "$OFFICIAL_FIX_MIN_VERSION"; then
+          echo "✅ Flutter $FLUTTER_VERSION includes the official ARM64 Linux fontconfig fix; custom SO build is not needed"
+          echo "build_needed=false" >> $GITHUB_OUTPUT
+          exit 0
+        fi
         
         # 检查是否已存在该版本的 SO 文件
         SO_FILE="lib/libflutter_linux_gtk.so.$FLUTTER_VERSION"

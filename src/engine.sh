@@ -1,3 +1,46 @@
+FLUTTER_CJK_OFFICIAL_FIX_MIN_VERSION="${FLUTTER_CJK_OFFICIAL_FIX_MIN_VERSION:-3.50.0}"
+
+version_ge() {
+    local version=$1
+    local minimum=$2
+    local version_major version_minor version_patch
+    local minimum_major minimum_minor minimum_patch
+
+    IFS=. read -r version_major version_minor version_patch <<< "$version"
+    IFS=. read -r minimum_major minimum_minor minimum_patch <<< "$minimum"
+
+    [[ "$version_major" =~ ^[0-9]+$ && "$version_minor" =~ ^[0-9]+$ && "${version_patch:-}" =~ ^[0-9]+$ ]] || return 1
+    [[ "$minimum_major" =~ ^[0-9]+$ && "$minimum_minor" =~ ^[0-9]+$ && "${minimum_patch:-}" =~ ^[0-9]+$ ]] || return 1
+
+    version_major=$((10#$version_major))
+    version_minor=$((10#$version_minor))
+    version_patch=$((10#$version_patch))
+    minimum_major=$((10#$minimum_major))
+    minimum_minor=$((10#$minimum_minor))
+    minimum_patch=$((10#$minimum_patch))
+
+    (( version_major > minimum_major )) && return 0
+    (( version_major < minimum_major )) && return 1
+    (( version_minor > minimum_minor )) && return 0
+    (( version_minor < minimum_minor )) && return 1
+    (( version_patch >= minimum_patch ))
+}
+
+is_official_fontconfig_fixed_version() {
+    local flutter_version=$1
+    version_ge "$flutter_version" "$FLUTTER_CJK_OFFICIAL_FIX_MIN_VERSION"
+}
+
+print_official_fontconfig_fixed_message() {
+    local flutter_version=$1
+
+    echo ""
+    echo "[OK] Flutter $flutter_version already includes the official ARM64 Linux fontconfig fix."
+    echo "     Flutter $flutter_version 已包含官方 ARM64 Linux fontconfig 修复。"
+    echo "[INFO] No SO replacement or font mapping is needed."
+    echo "       无需继续替换 SO 或挂载字体映射。"
+}
+
 detect_flutter_version_from_so() {
     local app_path=$1
 

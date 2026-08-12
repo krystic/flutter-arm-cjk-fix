@@ -4,69 +4,59 @@
 
 **Ubuntu ARM 平台下 Flutter 应用 CJK 字体显示修复工具**
 
-针对在 Ubuntu ARM 架构上运行的 Flutter 应用（Snap 和非 Snap）出现 CJK（中日韩）字符显示为方框（豆腐块）的问题，提供系统级自动修复方案。
+用于修复 Ubuntu ARM64 桌面环境中 Flutter 应用 CJK（中日韩）和部分非 ASCII 字符显示为方框的问题，支持 Snap 和非 Snap 应用。
 
-> **适用范围**：支持 Snap 应用（如 snap-store）和非 Snap 应用（如 rustdesk、AppImage、deb 包等）。通过 Engine Hash 自动检测 Flutter 版本，智能匹配和替换 SO 文件。
+> **适用范围**：Flutter 3.50.0 之前、未启用 Fontconfig 的 ARM64 Linux Flutter 应用。工具会通过 Engine Hash 自动识别 Flutter 版本，优先使用已校验的 SO 替换；Snap 应用无精确 SO 时可回退到字体映射。
 >
-> **Scope**: Supports both Snap apps (snap-store) and non-Snap apps (rustdesk, AppImage, deb packages, etc.). Auto-detects Flutter version via Engine Hash for intelligent SO file matching.
+> **官方修复状态**：Flutter 官方已 merge 我的 PR [flutter/flutter#180235](https://github.com/flutter/flutter/pull/180235)。从预计进入正式版的 Flutter 3.50.0 开始，ARM64 Linux Desktop Engine 会启用 Fontconfig。这个长期影响 ARM64 Linux 桌面用户的问题能在上游修复，我非常开心。检测到 Flutter 3.50.0 或之后版本时，本工具会直接跳过 SO 替换和字体映射。
 
 ---
 
 ## 📝 背景与原理
 
-### 问题现象
-在 ARM 架构（树莓派、飞腾、RK3588、Parallels 虚拟机等）运行 Ubuntu 时，许多由 Flutter 引擎构建的应用会出现 CJK 字符显示为方框。
+### 问题
 
-### 根本原因（已验证）
+在 Ubuntu ARM64 桌面环境（例如树莓派、飞腾、RK3588、Parallels 虚拟机等）中，部分 Flutter 应用会把 CJK 字符显示为方框。
 
-**问题已彻底定位**：通过自编译 Flutter Engine 并对比官方版本，确认核心原因是官方 ARM64 版本 `libflutter_linux_gtk.so` **未链接 Fontconfig 库**。
+已验证的根因是：旧版官方 ARM64 `libflutter_linux_gtk.so` 未链接 Fontconfig，Flutter Engine 无法通过系统字体配置完成字体回退。
 
-#### 技术层面
-Flutter 文本渲染链：`Flutter App → libflutter_linux_gtk.so → Skia → FontConfig`
+Flutter 官方已合入我的 PR [flutter/flutter#180235](https://github.com/flutter/flutter/pull/180235)，将 ARM64 Linux Desktop 和 Embedded Engine 构建拆分，使桌面版启用 Fontconfig，同时避免影响嵌入式 Linux 构建。按照 Flutter 2026 发布窗口，这个修复预计进入 Flutter 3.50.0 正式版。
 
-**验证方法**：
-```bash
-# 官方 ARM64 版本（缺陷）
-readelf -d libflutter_linux_gtk.so | grep fontconfig
-# (无输出)
+文本渲染链路：
 
-# 自编译修复版本
-readelf -d libflutter_linux_gtk.so | grep fontconfig
-# 0x0000000000000001 (NEEDED)  共享库：[libfontconfig.so.1]
+```text
+Flutter App → libflutter_linux_gtk.so → Skia → Fontconfig
 ```
 
-#### 构建配置缺陷
-- **x64 平台**（正常）：使用 `linux_host_desktop_engine.json` 配置，包含 `--enable-fontconfig` 参数
-- **ARM64 平台**（缺陷）：使用 `linux_arm_host_engine.json` 配置，**缺少** `--enable-fontconfig` 参数
-- **架构失误**：官方将桌面目标和嵌入式目标混在同一个配置中，导致桌面版继承了嵌入式的"精简"配置
+```bash
+# 旧版官方 ARM64 Engine：无输出
+readelf -d libflutter_linux_gtk.so | grep fontconfig
 
-#### 后果
-- Fontconfig 未启用 → Flutter Engine 无法发现系统字体
-- 字体回退机制失效 → CJK 字符找不到可用字体
-- 最终表现 → 显示为方框（□□□）
+# 启用 Fontconfig 的 Engine：应包含 libfontconfig.so.1
+readelf -d libflutter_linux_gtk.so | grep fontconfig
+```
 
-**详细技术分析见**：[FONTCONFIG_BUG_INVESTIGATION.md](FONTCONFIG_BUG_INVESTIGATION.md)
+详细分析见：[FONTCONFIG_BUG_INVESTIGATION.md](FONTCONFIG_BUG_INVESTIGATION.md)
 
 ### 解决方案
 
-本项目由 **Krystic** 使用 **VS Code + GitHub Copilot + Claude Sonnet 4.5** 协同开发，最终根本原因的定位得益于自编译对比验证。
+本项目由 **Krystic** 使用 **VS Code + Codex** 协同开发。根因定位依赖自编译 Flutter Engine 并与官方产物对比验证。
 
-#### 根治方案（推荐）
-通过自编译启用 Fontconfig 支持的 Flutter Engine SO 文件（`libflutter_linux_gtk.so`），使用 `mount --bind` 替换应用内的官方 SO，从根本上解决字体渲染问题。
+#### SO 替换
 
-- ✅ 完全修复 Fontconfig 支持
-- ✅ 支持所有语言字符（不限于 CJK）
-- ✅ 自动版本检测和智能匹配
-- ✅ 版本缓存机制（提升启动速度）
-- ✅ Systemd 开机自启
+对 Flutter 3.50.0 之前的受影响应用，使用启用 Fontconfig 的 `libflutter_linux_gtk.so` 替换旧版官方 SO：
 
-**编译说明**：[FONTCONFIG_BUG_INVESTIGATION.md](FONTCONFIG_BUG_INVESTIGATION.md)
+- Snap 应用：使用 `mount --bind`，不修改应用文件
+- 非 Snap 应用：直接替换 SO，自动备份并记录 SHA-256，恢复时校验原文件和备份
+- 在线 SO 必须通过 `SHA256SUMS` 校验后才会写入缓存
+
+#### 官方已修复版本
+
+从 Flutter 3.50.0 起，本工具默认认为官方 ARM64 Linux Desktop Engine 已包含 Fontconfig 修复。检测到 Flutter 3.50.0 或之后版本时，`flutter-font-fix` 会提示官方已修复并返回成功，不会替换 SO、创建备份、写入修复记录或回退字体映射。
 
 #### 兜底方案
-如果没有匹配的 SO 文件，自动回退到字体映射方案：通过 `mount --bind` 将 Noto Sans CJK 字体动态挂载到 Snap 应用内的 Ubuntu 字体路径。
 
-- ⚠️ 仅修复 CJK 字符显示
-- ⚠️ 其他语言符号可能仍显示为方框
+Snap 应用没有精确版本 SO 时，会回退到 Noto Sans CJK 字体映射。该方案只解决 CJK 字符，不能完整替代 Fontconfig。
 
 ---
 
@@ -74,25 +64,19 @@ readelf -d libflutter_linux_gtk.so | grep fontconfig
 
 ### 核心功能
 * 🎯 **双应用类型支持**
-  - **Snap 应用**（`-a` 模式）：自动检测 Flutter 版本，使用精确匹配的 SO 文件，无匹配时回退到字体映射
-  - **非 Snap 应用**（`-e` 模式）：支持直接指定可执行文件路径，智能提取 SO 信息，支持相似版本选择
+  - **Snap 应用**（`-a`）：精确 SO 替换；无匹配时回退字体映射
+  - **非 Snap 应用**（`-e`）：按可执行文件定位 SO，支持精确版本和相似版本选择
 * 🔍 **版本智能检测**
-  - **Hash 精确匹配**：通过 SO 文件中的 Engine Hash 精确识别 Flutter 版本
-  - **版本缓存机制**：缓存 Flutter 版本对照表（7天），避免重复网络请求
-  - **双源查找**：同时查找本地库和 GitHub 仓库，本地精确版本时自动跳过线上查询
-* 📦 **安全下载**：在线 SO 先下载到临时文件，通过仓库 `SHA256SUMS` 校验后再原子写入本地缓存，支持 CDN 加速
-* 🔄 **开机自启**：自动创建 Systemd 服务，系统重启后静默恢复所有映射
+  - 从 SO 提取 Engine Hash，匹配 Flutter 版本
+  - 缓存版本对照表 7 天
+  - Flutter 3.50.0+ 自动跳过修复
+* 📦 **安全下载**：在线 SO 先下载到临时文件，通过 `SHA256SUMS` 校验后原子写入缓存
+* 🔄 **开机自启**：systemd 服务可在重启后恢复 Snap 映射
 * 🛠️ **智能管理**
   - 自动安装字体依赖（`fonts-noto-cjk`）
-  - 冲突检测（SO 替换与字体映射模式智能切换）
   - 配置持久化（`/etc/flutter-cjk/`）
-  - Tab 自动补全（Snap 应用名称 + 文件路径）
-
-### 用户体验
-* 📋 **列表查看**：显示已映射应用的简要或详细信息
-* 🌐 **双语输出**：所有信息提供中英文对照
-* 🎨 **格式规范**：统一的 `[INFO]` / `[OK]` / `[ERROR]` / `[WARN]` 标签
-* ⚡ **即时生效**：无需重启应用，映射立即应用
+  - 状态查看、移除、恢复、卸载
+  - Bash 自动补全
 
 ---
 
@@ -149,7 +133,7 @@ sudo flutter-font-fix --install-service
 sudo flutter-font-fix -a snap-store
 
 # 输出示例：
-# [OK] [snap-store] Flutter Engine replaced with libflutter_linux_gtk.so.3.38.1
+# [OK] [snap-store] Flutter 引擎已替换为 libflutter_linux_gtk.so.3.38.1
 #      Flutter 引擎已替换，字体问题已根治。
 ```
 
@@ -161,8 +145,8 @@ sudo flutter-font-fix -e rustdesk
 sudo flutter-font-fix -e /usr/bin/rustdesk
 
 # 相似版本选择示例：
-# [WARN] No exact version found for 3.24.5
-# [INFO] Found compatible versions:
+# [WARN] 未找到精确版本 3.24.5
+# [INFO] 找到兼容版本：
 #   [1] 3.24.3 [本地/local]
 #   [2] 3.24.1 [线上/online]
 # 尝试这些版本之一吗？[1]: 
@@ -213,22 +197,22 @@ sudo flutter-font-fix --remove-all
 
 | 命令 | 功能说明 |
 |------|---------|
-| `sudo flutter-font-fix -e <exe>` | 修复非 Snap 应用（支持精确+相似版本）<br>Repair non-Snap apps (exact + similar versions) |
-| `sudo flutter-font-fix -a <app>` | 修复 Snap 应用（仅精确版本，回退字体映射）<br>Repair Snap apps (exact version only, fallback to font mapping) |
-| `sudo flutter-font-fix -c <app>` | 自定义字体修复 Snap 应用<br>Repair Snap apps with custom fonts |
-| `sudo flutter-font-fix -r <app>` | 移除/卸载映射（包括 SO 和字体）<br>Remove/unmount mappings (SO and fonts) |
-| `flutter-font-fix -l \| --list` | 列出已映射应用<br>List mapped apps |
-| `flutter-font-fix -d \| --detail` | 详细映射信息<br>Detail mappings |
-| `sudo flutter-font-fix --remove-all` | 移除全部<br>Remove all |
-| `sudo flutter-font-fix --uninstall-service` | 卸载系统服务<br>Uninstall systemd service |
-| `sudo flutter-font-fix --uninstall` | 完全卸载<br>Uninstall completely |
-| `sudo flutter-font-fix -i \| --install-completion` | 安装补全<br>Install completion |
+| `sudo flutter-font-fix -e <exe>` | 修复非 Snap 应用（支持精确版本和相似版本） |
+| `sudo flutter-font-fix -a <app>` | 修复 Snap 应用（仅使用精确版本，未匹配时回退字体映射） |
+| `sudo flutter-font-fix -c <app>` | 使用自定义字体修复 Snap 应用 |
+| `sudo flutter-font-fix -r <app>` | 移除/卸载映射（包括 SO 和字体） |
+| `flutter-font-fix -l \| --list` | 列出已映射应用 |
+| `flutter-font-fix -d \| --detail` | 查看详细映射信息 |
+| `sudo flutter-font-fix --remove-all` | 移除全部映射 |
+| `sudo flutter-font-fix --uninstall-service` | 卸载 systemd 服务 |
+| `sudo flutter-font-fix --uninstall` | 完全卸载 |
+| `sudo flutter-font-fix -i \| --install-completion` | 安装 Bash 补全 |
 
 ### 全局参数
 
 | 参数 | 功能说明 |
 |------|---------|
-| `--cdn <prefix>` | 覆盖 GitHub Raw CDN 前缀（含末尾斜杠）<br>Override GitHub Raw CDN prefix (with trailing slash) |
+| `--cdn <prefix>` | 覆盖 GitHub Raw CDN 前缀（含末尾斜杠） |
 
 ### 高级选项
 
@@ -532,7 +516,7 @@ bash tests/run-tests.sh
 |------|------|
 | `engine.sh` | Engine Hash 解析、版本匹配、在线查询、下载与摘要校验 |
 | `non-snap.sh` | 非 Snap SO 替换、持久化记录和安全恢复 |
-| `snap.sh` | Snap Engine bind mount、字体映射及卸载 |
+| `snap.sh` | Snap Engine 绑定挂载、字体映射及卸载 |
 | `system.sh` | systemd、配置、补全、列表和自定义字体 |
 | `cli.sh` | CLI 帮助、参数解析和主入口 |
 
@@ -550,9 +534,9 @@ bash tests/run-tests.sh
 
 ## 🙏 致谢
 
-本项目的核心问题研究和解决方案由 **Gemini 3** 深度分析提供，代码实现使用 **VS Code + GitHub Copilot + Claude Sonnet 4.5** 协同完成。
+本项目由 **Krystic** 使用 **VS Code + Codex** 协同完成。核心问题的定位依赖自编译 Flutter Engine、`readelf` 对比验证，以及社区中关于 Snap/Flutter 字体问题的技术讨论。
 
-感谢社区中关于 Snap 字体问题的讨论和相关技术资料。
+感谢 Flutter 社区和相关资料对问题定位的帮助。
 
 ---
 

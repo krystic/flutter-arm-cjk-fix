@@ -240,6 +240,11 @@ handle_executable_app() {
     echo "      Version: $flutter_version (matched hash: ${matched_hash:0:8}...)"
     echo ""
 
+    if is_official_fontconfig_fixed_version "$flutter_version"; then
+        print_official_fontconfig_fixed_message "$flutter_version"
+        return 0
+    fi
+
     # 步骤 5: 统一查找所有可用版本（精确+相似，本地+线上）
     echo "[5/5] Checking for available SO files..."
     echo "      正在检查可用的 SO 文件..."
